@@ -34,9 +34,13 @@ class AiQuestionService
             $created = 0;
             $provider = (string) config('services.ai.default_provider', 'local-draft');
             $usedProvider = false;
-            foreach ($session->structures as $structure) {
+
+            // Group structures by question_type to minimize API requests
+            $groups = $session->structures->groupBy('question_type');
+
+            foreach ($groups as $questionType => $structures) {
                 if ($this->shouldUseGemini($provider)) {
-                    $generated = $this->generateForStructureWithGemini($session, $structure, $created);
+                    $generated = $this->generateForGroupWithGemini($session, $structures, $created);
                     if ($generated !== null) {
                         $created += $generated;
                         $usedProvider = true;
@@ -45,7 +49,9 @@ class AiQuestionService
                     }
                 }
 
-                $created += $this->generateForStructureLocal($session, $structure, $created);
+                foreach ($structures as $structure) {
+                    $created += $this->generateForStructureLocal($session, $structure, $created);
+                }
             }
 
             AiUsageLog::create([
@@ -73,15 +79,15 @@ class AiQuestionService
         return Str::lower(trim($provider)) === 'gemini' && filled(config('services.ai.gemini_key'));
     }
 
-    private function generateForStructureWithGemini(ExamSession $session, QuestionStructure $structure, int $offset): ?int
+    private function generateForGroupWithGemini(ExamSession $session, \Illuminate\Support\Collection $structures, int $offset): ?int
     {
         try {
-            $payload = $this->requestGeminiQuestions($session, $structure);
+            $payload = $this->requestGeminiQuestions($session, $structures);
             if (! isset($payload['questions']) || ! is_array($payload['questions'])) {
                 return null;
             }
 
-            return $this->persistProviderQuestions($session, $structure, $offset, $payload['questions']);
+            return $this->persistProviderQuestions($session, $structures, $offset, $payload['questions']);
         } catch (Throwable $exception) {
             if ($this->shouldAbortProviderFallback($exception)) {
                 throw new AiProviderException($this->providerErrorMessage($exception), $exception);
@@ -89,7 +95,7 @@ class AiQuestionService
 
             Log::warning('Gemini generation failed, falling back to local draft.', [
                 'exam_session_id' => $session->id,
-                'question_structure_id' => $structure->id,
+                'question_structure_ids' => $structures->pluck('id')->all(),
                 'error' => $exception->getMessage(),
             ]);
 
@@ -97,65 +103,60 @@ class AiQuestionService
         }
     }
 
-    private function requestGeminiQuestions(ExamSession $session, QuestionStructure $structure): array
+    private function requestGeminiQuestions(ExamSession $session, \Illuminate\Support\Collection $structures): array
     {
-        $configuredModel = (string) config('services.ai.gemini_model', 'gemini-2.5-flash');
+        $configuredModel = (string) config('services.ai.gemini_model', 'gemini-1.5-flash');
         $apiKey = (string) config('services.ai.gemini_key');
         $models = $this->candidateGeminiModels($configuredModel);
         $lastError = 'Gemini request failed.';
-        $payloadVariants = [
-            [
-                'generationConfig' => [
-                    'responseMimeType' => 'application/json',
-                ],
-            ],
-            [
-                'generationConfig' => [],
-            ],
-            [],
-        ];
 
         foreach ($models as $model) {
             $endpoint = sprintf(
-                'https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent',
-                rawurlencode($model)
+                'https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s',
+                rawurlencode($model),
+                $apiKey
             );
 
-            foreach ($payloadVariants as $variant) {
-                $payload = array_merge([
-                    'contents' => [[
-                        'parts' => [[
-                            'text' => $this->buildGeminiPrompt($session, $structure),
-                        ]],
+            $payload = [
+                'contents' => [[
+                    'parts' => [[
+                        'text' => $this->buildGeminiPrompt($session, $structures),
                     ]],
-                ], $variant);
+                ]],
+            ];
 
-                $response = Http::timeout(60)
-                    ->acceptJson()
-                    ->withHeaders([
-                        'x-goog-api-key' => $apiKey,
-                        'Content-Type' => 'application/json',
-                    ])
-                    ->post($endpoint, $payload);
+            $response = Http::timeout(150)
+                ->acceptJson()
+                ->withHeaders([
+                    'Content-Type' => 'application/json',
+                ])
+                ->post($endpoint, $payload);
 
-                if (! $response->successful()) {
-                    $lastError = sprintf(
-                        '[v1beta|%s] HTTP %d: %s',
-                        $model,
-                        $response->status(),
-                        (string) data_get($response->json(), 'error.message', $response->body())
-                    );
-                    continue;
+            if (! $response->successful()) {
+                $errorBody = (string) data_get($response->json(), 'error.message', $response->body());
+                $lastError = "[v1|{$model}] HTTP {$response->status()}: {$errorBody}";
+                
+                // Log kegagalan per model agar kita tahu kenapa model utama gagal
+                Log::info("Gemini attempt failed for model {$model}", [
+                    'status' => $response->status(),
+                    'error' => $errorBody
+                ]);
+
+                // Jika API Key salah atau akses ditolak, jangan coba model lain
+                if (in_array($response->status(), [401, 403])) {
+                    throw new RuntimeException($lastError);
                 }
 
-                $text = data_get($response->json(), 'candidates.0.content.parts.0.text');
-                if (! is_string($text) || trim($text) === '') {
-                    $lastError = sprintf('[v1beta|%s] Gemini response is empty.', $model);
-                    continue;
-                }
-
-                return $this->decodeProviderJson($text);
+                continue;
             }
+
+            $text = data_get($response->json(), 'candidates.0.content.parts.0.text');
+            if (! is_string($text) || trim($text) === '') {
+                $lastError = sprintf('[v1beta|%s] Gemini response is empty.', $model);
+                continue;
+            }
+
+            return $this->decodeProviderJson($text);
         }
 
         throw new RuntimeException($lastError);
@@ -181,8 +182,12 @@ class AiQuestionService
     {
         $message = Str::lower($exception->getMessage());
 
-        if (Str::contains($message, ['http 429', 'quota exceeded', 'rate limit', 'billing'])) {
-            return 'i gagal karena kuota atau billing API habis. Cek plan, billing, dan limit API key Gemini yang dipakai.';
+        if (Str::contains($message, ['http 429', 'quota exceeded', 'rate limit'])) {
+            return 'Generate Gemini gagal karena melebihi batas kecepatan (Rate Limit). Silakan tunggu 1 menit atau gunakan billing Pay-as-you-go untuk limit yang lebih tinggi.';
+        }
+
+        if (Str::contains($message, ['billing'])) {
+            return 'Generate Gemini gagal karena billing API habis atau belum diaktifkan. Cek Google Cloud Console.';
         }
 
         if (Str::contains($message, ['http 401', 'http 403', 'api key not valid', 'permission denied'])) {
@@ -196,14 +201,14 @@ class AiQuestionService
     {
         $normalized = $this->normalizeGeminiModel($configuredModel);
         $fallbacks = [
+            'gemini-3-flash',
             'gemini-2.5-flash',
-            'gemini-2.0-flash',
-            'gemini-2.0-flash-lite',
+            'gemini-2.5-flash-lite',
         ];
 
         return collect(array_merge([$normalized], $fallbacks))
-            ->filter(fn ($value) => is_string($value) && trim($value) !== '')
-            ->map(fn ($value) => trim($value))
+            ->filter(fn($value) => is_string($value) && trim($value) !== '')
+            ->map(fn($value) => trim($value))
             ->unique()
             ->values()
             ->all();
@@ -220,10 +225,26 @@ class AiQuestionService
         return $normalized;
     }
 
-    private function buildGeminiPrompt(ExamSession $session, QuestionStructure $structure): string
+    private function buildGeminiPrompt(ExamSession $session, \Illuminate\Support\Collection $structures): string
     {
-        $total = (int) $structure->total_questions;
-        $levels = implode(', ', $structure->cognitive_levels ?? ['C1 Mengingat', 'C2 Memahami', 'C3 Menerapkan']);
+        $questionType = $structures->first()->question_type;
+        $total = $structures->sum('total_questions');
+        $easy = $structures->sum('easy_count');
+        $medium = $structures->sum('medium_count');
+        $hard = $structures->sum('hard_count');
+        $optionCount = $structures->max('option_count');
+
+        $levels = $structures->pluck('cognitive_levels')
+            ->flatten()
+            ->unique()
+            ->filter()
+            ->values()
+            ->implode(', ');
+
+        if (empty($levels)) {
+            $levels = 'C1 Mengingat, C2 Memahami, C3 Menerapkan';
+        }
+
         $subtopic = $session->subtopic ?? '-';
 
         return <<<PROMPT
@@ -236,10 +257,10 @@ Identitas sesi:
 - Jenjang/Kelas: {$session->education_level} / {$session->class_level}
 
 Struktur yang harus dipenuhi:
-- question_type: {$structure->question_type}
+- question_type: {$questionType}
 - jumlah total: {$total}
-- distribusi: Mudah {$structure->easy_count}, Sedang {$structure->medium_count}, Sulit {$structure->hard_count}
-- option_count (jika relevan): {$structure->option_count}
+- distribusi: Mudah {$easy}, Sedang {$medium}, Sulit {$hard}
+- option_count (jika relevan): {$optionCount}
 - level kognitif yang boleh: {$levels}
 
 Kembalikan objek JSON:
@@ -290,16 +311,29 @@ PROMPT;
 
     private function persistProviderQuestions(
         ExamSession $session,
-        QuestionStructure $structure,
+        \Illuminate\Support\Collection $structures,
         int $offset,
         array $questions
     ): int {
-        $targetCounts = [
-            'Mudah' => (int) $structure->easy_count,
-            'Sedang' => (int) $structure->medium_count,
-            'Sulit' => (int) $structure->hard_count,
+        // Siapkan pelacak kuota per struktur soal
+        $registry = $structures->mapWithKeys(fn($s) => [
+            $s->id => [
+                'model' => $s,
+                'targets' => [
+                    'Mudah' => (int) $s->easy_count,
+                    'Sedang' => (int) $s->medium_count,
+                    'Sulit' => (int) $s->hard_count,
+                ],
+                'current' => ['Mudah' => 0, 'Sedang' => 0, 'Sulit' => 0],
+            ],
+        ])->toArray();
+
+        $groupTargets = [
+            'Mudah' => $structures->sum('easy_count'),
+            'Sedang' => $structures->sum('medium_count'),
+            'Sulit' => $structures->sum('hard_count'),
         ];
-        $currentCounts = ['Mudah' => 0, 'Sedang' => 0, 'Sulit' => 0];
+        $groupCurrent = ['Mudah' => 0, 'Sedang' => 0, 'Sulit' => 0];
 
         $created = 0;
         foreach ($questions as $item) {
@@ -307,13 +341,29 @@ PROMPT;
                 continue;
             }
 
-            $difficulty = $this->normalizeDifficulty((string) ($item['difficulty'] ?? ''), $targetCounts, $currentCounts);
+            $difficulty = $this->normalizeDifficulty((string) ($item['difficulty'] ?? ''), $groupTargets, $groupCurrent);
             if ($difficulty === null) {
                 continue;
             }
 
-            $currentCounts[$difficulty]++;
+            // Cari struktur mana yang masih butuh tingkat kesulitan ini
+            $targetStructureId = null;
+            foreach ($registry as $id => $data) {
+                if ($data['current'][$difficulty] < $data['targets'][$difficulty]) {
+                    $targetStructureId = $id;
+                    break;
+                }
+            }
+
+            if ($targetStructureId === null) {
+                continue;
+            }
+
+            $registry[$targetStructureId]['current'][$difficulty]++;
+            $groupCurrent[$difficulty]++;
             $created++;
+
+            $structure = $registry[$targetStructureId]['model'];
             $sequence = $offset + $created;
             $cognitive = $this->normalizeCognitiveLevel((string) ($item['cognitive_level'] ?? ''), $structure, $sequence);
             $answerKey = $this->normalizeAnswerKey($structure, $sequence, (string) ($item['answer_key'] ?? ''));
@@ -334,8 +384,8 @@ PROMPT;
             $this->createProviderBlueprint($question, $session, $structure, $cognitive, $item['blueprint'] ?? null);
         }
 
-        if ($currentCounts !== $targetCounts) {
-            throw new RuntimeException('Provider output does not satisfy required difficulty distribution.');
+        if ($groupCurrent !== $groupTargets) {
+            throw new RuntimeException('Provider output does not satisfy required difficulty distribution for the group.');
         }
 
         return $created;
@@ -503,8 +553,8 @@ PROMPT;
         $visualInstruction = $visual ? " Pertimbangkan instruksi visual: {$visual}." : '';
 
         return "Soal {$sequence} ({$difficulty}, {$cognitive}). Pada materi {$session->topic}"
-            .($session->subtopic ? " submateri {$session->subtopic}" : '')
-            .", susun jawaban paling tepat untuk bentuk {$structure->question_type}.{$visualInstruction}";
+            . ($session->subtopic ? " submateri {$session->subtopic}" : '')
+            . ", susun jawaban paling tepat untuk bentuk {$structure->question_type}.{$visualInstruction}";
     }
 
     private function explanationText(ExamSession $session, string $difficulty, string $cognitive): string
