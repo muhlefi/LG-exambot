@@ -236,10 +236,12 @@ class AiQuestionService
     {
         $normalized = $this->normalizeGeminiModel($configuredModel);
         $fallbacks = [
+            'gemini-2.5-flash',
+            'gemini-2.0-flash',
+            'gemini-2.5-flash-lite',
+            'gemini-2.0-flash-lite',
             'gemini-1.5-flash',
             'gemini-1.5-pro',
-            'gemini-2.0-flash-exp',
-            'gemini-1.0-pro',
         ];
 
         return collect(array_merge([$normalized], $fallbacks))
@@ -476,15 +478,8 @@ PROMPT;
             $this->createProviderBlueprint($question, $session, $structure, $cognitive, $item['blueprint'] ?? null);
         }
 
-        $totalTarget = array_sum($groupTargets);
-        if ($created < $totalTarget) {
-            Log::warning("Provider output partial", [
-                'expected' => $totalTarget,
-                'actual' => $created,
-                'distribution_expected' => $groupTargets,
-                'distribution_actual' => $groupCurrent,
-            ]);
-            throw new RuntimeException("AI hanya berhasil membuat {$created} dari {$totalTarget} soal yang diminta. Silakan coba lagi.");
+        if ($groupCurrent !== $groupTargets) {
+            throw new RuntimeException('Provider output does not satisfy required difficulty distribution for the group.');
         }
 
         return $created;
