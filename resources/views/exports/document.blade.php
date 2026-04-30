@@ -14,8 +14,14 @@
     </style>
 </head>
 <body>
-    <h2>{{ strtoupper($session->school_name) }}</h2>
-    <h1>
+    <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px;">
+        <h3 style="margin: 0; font-size: 14px; font-weight: bold; text-transform: uppercase;">BIMBINGAN BELAJAR</h3>
+        <h1 style="margin: 0; font-size: 28px; font-weight: black; color: #f59e0b;">L-G Learning</h1>
+        <p style="margin: 2px 0; font-size: 11px;">Kemiri Pakukerto sukorejo</p>
+        <p style="margin: 0; font-size: 11px; font-weight: bold;">WA : 085815222639 II website : l-glearning.com</p>
+    </div>
+
+    <h2 style="text-align: center; margin-bottom: 10px; font-size: 16px;">
         @if ($documentType === 'answers')
             KUNCI JAWABAN
         @elseif ($documentType === 'blueprint')
@@ -23,7 +29,7 @@
         @else
             NASKAH SOAL
         @endif
-    </h1>
+    </h2>
 
     <table class="meta">
         <tr><td>Mata Pelajaran</td><td>: {{ $session->subject }}</td></tr>
@@ -62,7 +68,14 @@
     @else
         @foreach ($session->questions as $question)
             <div class="question">
-                <strong>{{ $loop->iteration }}. {{ $question->question_text }}</strong>
+                <div style="font-weight: bold; margin-bottom: 5px;">{{ $loop->iteration }}. {!! $question->pdf_formatted_text !!}</div>
+                
+                @if ($question->question_image)
+                    <div style="margin: 10px 0; text-align: center;">
+                        <img src="{{ public_path('storage/' . $question->question_image) }}" style="max-width: 100%; max-height: 250px; border: 1px solid #eee;">
+                    </div>
+                @endif
+
                 @if ($question->options->isNotEmpty())
                     <div class="options">
                         @foreach ($question->options as $option)

@@ -33,22 +33,16 @@ class ExamSessionController extends Controller
         $data = $request->validate([
             'title' => ['required', 'string', 'max:255'],
             'teacher_name' => ['required', 'string', 'max:255'],
-            'school_name' => ['required', 'string', 'max:255'],
-            'logo' => ['nullable', 'image', 'max:2048'],
             'education_level' => ['required', 'string', 'max:100'],
-            'learning_phase' => ['nullable', 'string', 'max:100'],
             'class_level' => ['required', 'string', 'max:100'],
             'semester' => ['required', 'string', 'max:100'],
             'academic_year' => ['required', 'string', 'max:100'],
             'subject' => ['required', 'string', 'max:255'],
             'topic' => ['required', 'string', 'max:255'],
-            'subtopic' => ['nullable', 'string', 'max:255'],
+            'subtopic' => ['nullable', 'string', 'max:2000'],
         ]);
 
-        if ($request->hasFile('logo')) {
-            $data['logo_path'] = $request->file('logo')->store('school-logos', 'public');
-        }
-
+        $data['school_name'] = 'BIMBINGAN BELAJAR L-G Learning';
         $data['user_id'] = Auth::id();
         $data['status'] = 'draft';
 
@@ -79,10 +73,7 @@ class ExamSessionController extends Controller
         $data = $request->validate([
             'title' => ['required', 'string', 'max:255'],
             'teacher_name' => ['required', 'string', 'max:255'],
-            'school_name' => ['required', 'string', 'max:255'],
-            'logo' => ['nullable', 'image', 'max:2048'],
             'education_level' => ['required', 'string', 'max:100'],
-            'learning_phase' => ['nullable', 'string', 'max:100'],
             'class_level' => ['required', 'string', 'max:100'],
             'semester' => ['required', 'string', 'max:100'],
             'academic_year' => ['required', 'string', 'max:100'],
@@ -90,10 +81,6 @@ class ExamSessionController extends Controller
             'topic' => ['required', 'string', 'max:255'],
             'subtopic' => ['nullable', 'string', 'max:255'],
         ]);
-
-        if ($request->hasFile('logo')) {
-            $data['logo_path'] = $request->file('logo')->store('school-logos', 'public');
-        }
 
         $examSession->update($data);
 
@@ -129,8 +116,14 @@ class ExamSessionController extends Controller
         ]);
 
         $total = (int) $data['easy_count'] + (int) $data['medium_count'] + (int) $data['hard_count'];
+        $currentTotal = (int) $examSession->structures->sum('total_questions');
+
         if ($total < 1) {
             return back()->withErrors(['easy_count' => 'Minimal total soal adalah 1.'])->withInput();
+        }
+
+        if (($currentTotal + $total) > 40) {
+            return back()->withErrors(['easy_count' => "Batas maksimal soal per sesi adalah 40. Saat ini sudah ada {$currentTotal} soal, Anda mencoba menambahkan {$total} soal lagi."])->withInput();
         }
 
         $examSession->structures()->create([
@@ -150,6 +143,13 @@ class ExamSessionController extends Controller
     {
         $this->authorizeOwner($examSession);
         abort_unless($structure->exam_session_id === $examSession->id, 404);
+
+        $currentTotal = (int) $examSession->structures->sum('total_questions');
+        $newTotal = $currentTotal + $structure->total_questions;
+
+        if ($newTotal > 40) {
+            return back()->withErrors(['status' => "Gagal duplikasi: Batas maksimal 40 soal terlampaui."]);
+        }
 
         $copy = $structure->replicate();
         $copy->sort_order = ((int) $examSession->structures()->max('sort_order')) + 1;
@@ -206,6 +206,47 @@ class ExamSessionController extends Controller
         return $exportService->download($examSession, $documentType, $format);
     }
 
+    public function editQuestion(Question $question)
+    {
+        $session = $question->examSession;
+        $this->authorizeOwner($session);
+
+        $question->load('options');
+
+        return view('questions.edit', compact('question'));
+    }
+
+    public function updateQuestion(Request $request, Question $question)
+    {
+        $session = $question->examSession;
+        $this->authorizeOwner($session);
+
+        $data = $request->validate([
+            'question_text' => 'required|string',
+            'answer_key' => 'required|string',
+            'explanation' => 'nullable|string',
+            'options' => 'nullable|array',
+            'options.*.id' => 'required|exists:question_options,id',
+            'options.*.text' => 'required|string',
+        ]);
+
+        $question->update([
+            'question_text' => $data['question_text'],
+            'answer_key' => $data['answer_key'],
+            'explanation' => $data['explanation'],
+        ]);
+
+        if (!empty($data['options'])) {
+            foreach ($data['options'] as $optionData) {
+                $question->options()->where('id', $optionData['id'])->update([
+                    'option_text' => $optionData['text'],
+                ]);
+            }
+        }
+
+        return redirect()->route('sessions.results', $session)->with('status', 'Soal berhasil diperbarui.');
+    }
+
     public function destroyQuestion(Question $question)
     {
         $session = $question->examSession;
@@ -214,6 +255,22 @@ class ExamSessionController extends Controller
         $question->delete();
 
         return back()->with('status', 'Soal berhasil dihapus.');
+    }
+
+    public function batchDestroyQuestions(Request $request, ExamSession $examSession)
+    {
+        $this->authorizeOwner($examSession);
+        $ids = $request->input('question_ids', []);
+        
+        if (empty($ids)) {
+            return back()->withErrors(['question_ids' => 'Pilih setidaknya satu soal.']);
+        }
+
+        Question::where('exam_session_id', $examSession->id)
+            ->whereIn('id', $ids)
+            ->delete();
+
+        return back()->with('status', count($ids) . ' soal berhasil dihapus secara massal.');
     }
 
     private function authorizeOwner(ExamSession $examSession): void

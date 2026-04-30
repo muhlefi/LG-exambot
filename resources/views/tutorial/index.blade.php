@@ -10,7 +10,7 @@
                 <h2 class="ink-heading text-3xl font-black">{{ $category }}</h2>
                 <div class="mt-5 space-y-4">
                     @foreach ($items as $lesson)
-                        <article class="rounded-2xl bg-white/70 p-5">
+                        <article class="rounded-xl bg-white/70 p-5">
                             <h3 class="font-black">{{ $lesson->title }}</h3>
                             <p class="mt-2 text-sm leading-6 text-ink/70">{{ $lesson->body }}</p>
                             @if ($lesson->video_url)

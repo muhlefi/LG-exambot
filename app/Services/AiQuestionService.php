@@ -109,6 +109,8 @@ class AiQuestionService
         $apiKey = (string) config('services.ai.gemini_key');
         $models = $this->candidateGeminiModels($configuredModel);
         $lastError = 'Gemini request failed.';
+        $prompt = $this->buildGeminiPrompt($session, $structures);
+        $maxRetries = 3;
 
         foreach ($models as $model) {
             $endpoint = sprintf(
@@ -120,48 +122,76 @@ class AiQuestionService
             $payload = [
                 'contents' => [[
                     'parts' => [[
-                        'text' => $this->buildGeminiPrompt($session, $structures),
+                        'text' => $prompt,
                     ]],
                 ]],
+                'generationConfig' => [
+                    'responseMimeType' => 'application/json',
+                    'temperature' => 0.7,
+                ],
             ];
 
-            $request = Http::timeout(150)
-                ->acceptJson()
-                ->withHeaders([
-                    'Content-Type' => 'application/json',
-                ]);
+            for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
+                $request = Http::timeout(150)
+                    ->acceptJson()
+                    ->withHeaders(['Content-Type' => 'application/json']);
 
-            if (app()->environment('local')) {
-                $request->withoutVerifying();
-            }
-
-            $response = $request->post($endpoint, $payload);
-
-            if (! $response->successful()) {
-                $errorBody = (string) data_get($response->json(), 'error.message', $response->body());
-                $lastError = "[v1|{$model}] HTTP {$response->status()}: {$errorBody}";
-                
-                // Log kegagalan per model agar kita tahu kenapa model utama gagal
-                Log::info("Gemini attempt failed for model {$model}", [
-                    'status' => $response->status(),
-                    'error' => $errorBody
-                ]);
-
-                // Jika API Key salah atau akses ditolak, jangan coba model lain
-                if (in_array($response->status(), [401, 403])) {
-                    throw new RuntimeException($lastError);
+                if (app()->environment('local')) {
+                    $request->withoutVerifying();
                 }
 
-                continue;
-            }
+                $response = $request->post($endpoint, $payload);
 
-            $text = data_get($response->json(), 'candidates.0.content.parts.0.text');
-            if (! is_string($text) || trim($text) === '') {
-                $lastError = sprintf('[v1beta|%s] Gemini response is empty.', $model);
-                continue;
-            }
+                if (! $response->successful()) {
+                    $errorBody = (string) data_get($response->json(), 'error.message', $response->body());
+                    $lastError = "[{$model}|attempt {$attempt}] HTTP {$response->status()}: {$errorBody}";
 
-            return $this->decodeProviderJson($text);
+                    Log::info("Gemini attempt failed", [
+                        'model' => $model,
+                        'attempt' => $attempt,
+                        'status' => $response->status(),
+                        'error' => $errorBody,
+                    ]);
+
+                    // API Key salah → langsung gagal, jangan retry
+                    if (in_array($response->status(), [401, 403])) {
+                        throw new RuntimeException($lastError);
+                    }
+
+                    // 503 (overloaded) atau 429 (rate limit) → tunggu lalu retry
+                    if (in_array($response->status(), [503, 429]) && $attempt < $maxRetries) {
+                        $delay = $attempt * 5; // 5s, 10s, 15s
+                        Log::info("Retrying model {$model} in {$delay}s (attempt {$attempt}/{$maxRetries})");
+                        sleep($delay);
+                        continue;
+                    }
+
+                    break; // Gagal non-retryable → pindah ke model berikutnya
+                }
+
+                $text = data_get($response->json(), 'candidates.0.content.parts.0.text');
+                if (! is_string($text) || trim($text) === '') {
+                    $lastError = sprintf('[%s] Gemini response is empty.', $model);
+                    break;
+                }
+
+                try {
+                    return $this->decodeProviderJson($text);
+                } catch (RuntimeException $e) {
+                    $lastError = "[{$model}] " . $e->getMessage();
+                    Log::warning("JSON decode failed for model {$model}, attempt {$attempt}", [
+                        'error' => $e->getMessage(),
+                        'raw_length' => strlen($text),
+                    ]);
+
+                    // Jika JSON gagal parse, retry mungkin membantu
+                    if ($attempt < $maxRetries) {
+                        sleep(2);
+                        continue;
+                    }
+                    break;
+                }
+            }
         }
 
         throw new RuntimeException($lastError);
@@ -207,9 +237,11 @@ class AiQuestionService
         $normalized = $this->normalizeGeminiModel($configuredModel);
         $fallbacks = [
             'gemini-2.5-flash',
+            'gemini-2.0-flash',
             'gemini-2.5-flash-lite',
-            'gemini-3.1-flash-lite-preview',
+            'gemini-2.0-flash-lite',
             'gemini-1.5-flash',
+            'gemini-1.5-pro',
         ];
 
         return collect(array_merge([$normalized], $fallbacks))
@@ -272,7 +304,7 @@ Buat soal asesmen berbahasa Indonesia dalam format JSON murni.
 Identitas sesi:
 - Mata pelajaran: {$session->subject}
 - Materi: {$session->topic}
-- Sub materi: {$subtopic}
+- Batasan Teori: {$subtopic} (PENTING: Hanya buat soal dalam cakupan teori ini)
 - Jenjang/Kelas: {$session->education_level} / {$session->class_level}
 
 Struktur yang harus dipenuhi:
@@ -282,17 +314,25 @@ Struktur yang harus dipenuhi:
 - option_count (jika relevan): {$optionCount}
 - level kognitif yang boleh: {$levels}
 
-Aturan Variasi Media:
-- Pengguna mengaktifkan: {$visual}
-- JANGAN berikan semua media tersebut dalam satu soal.
-- Distribusikan secara acak: satu soal mungkin hanya punya gambar, soal lain mungkin hanya tabel, soal lain mungkin hanya diagram, dan sebagian soal lainnya (sekitar 30%) harus murni teks tanpa media.
-- Pastikan variasi ini terasa natural.
+Aturan Variasi Media (SANGAT KETAT):
+- Media yang diperbolehkan hanya: {$visual}
+- JANGAN PERNAH memberikan media yang tidak ada di daftar atas.
+- Jika daftar media di atas kosong, buat soal 100% teks.
+- Distribusikan secara acak: satu soal maksimal hanya boleh memiliki SATU jenis media dari daftar di atas.
+- Sisakan sekitar 20% soal murni teks tanpa media untuk variasi.
+
+Aturan Format Konten:
+- TABEL: Wajib gunakan format Markdown standar dengan baris pemisah, contoh:
+  | Judul 1 | Judul 2 |
+  | --- | --- |
+  | Data 1 | Data 2 |
+- GAMBAR/DIAGRAM: Karena Anda berbasis teks, berikan deskripsi visual di dalam teks soal dengan format: [GAMBAR: deskripsi detail ilustrasi yang dibutuhkan] atau [DIAGRAM: deskripsi data diagram].
 
 Kembalikan objek JSON:
 {
   "questions": [
     {
-      "question_text": "...",
+      "question_text": "... jika butuh tabel/gambar masukkan di sini sesuai format di atas ...",
       "question_type": "...",
       "difficulty": "Mudah|Sedang|Sulit",
       "cognitive_level": "...",
@@ -322,16 +362,44 @@ PROMPT;
     private function decodeProviderJson(string $text): array
     {
         $clean = trim($text);
-        $clean = preg_replace('/^```json\s*/i', '', $clean) ?? $clean;
-        $clean = preg_replace('/^```\s*/', '', $clean) ?? $clean;
-        $clean = preg_replace('/\s*```$/', '', $clean) ?? $clean;
 
+        // 1. Hapus code fence markdown
+        $clean = preg_replace('/^```(?:json)?\s*/i', '', $clean) ?? $clean;
+        $clean = preg_replace('/\s*```\s*$/', '', $clean) ?? $clean;
+
+        // 2. Coba decode langsung
         $decoded = json_decode($clean, true);
-        if (! is_array($decoded)) {
-            throw new RuntimeException('Provider response is not valid JSON.');
+        if (is_array($decoded)) {
+            return $decoded;
         }
 
-        return $decoded;
+        // 3. Cari blok JSON terbesar di dalam teks (AI kadang menambahkan penjelasan)
+        if (preg_match('/\{[\s\S]*"questions"\s*:\s*\[[\s\S]*\]\s*\}/', $clean, $matches)) {
+            $decoded = json_decode($matches[0], true);
+            if (is_array($decoded)) {
+                Log::info('JSON extracted from mixed AI response using regex fallback.');
+                return $decoded;
+            }
+        }
+
+        // 4. Cari dari kurung kurawal pertama sampai terakhir
+        $firstBrace = strpos($clean, '{');
+        $lastBrace = strrpos($clean, '}');
+        if ($firstBrace !== false && $lastBrace !== false && $lastBrace > $firstBrace) {
+            $jsonCandidate = substr($clean, $firstBrace, $lastBrace - $firstBrace + 1);
+            $decoded = json_decode($jsonCandidate, true);
+            if (is_array($decoded)) {
+                Log::info('JSON extracted using brace-matching fallback.');
+                return $decoded;
+            }
+        }
+
+        Log::warning('Failed to extract JSON from AI response', [
+            'length' => strlen($text),
+            'preview' => Str::limit($text, 500),
+        ]);
+
+        throw new RuntimeException('Provider response is not valid JSON. AI mungkin mengembalikan format yang salah.');
     }
 
     private function persistProviderQuestions(

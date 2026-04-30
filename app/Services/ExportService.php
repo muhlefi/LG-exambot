@@ -37,7 +37,9 @@ class ExportService
         return Pdf::loadView('exports.document', [
             'session' => $session,
             'documentType' => $documentType,
-        ])->setPaper('a4')->download($this->filename($session, $documentType, 'pdf'));
+        ])->setPaper('a4')
+          ->setOptions(['isRemoteEnabled' => true])
+          ->download($this->filename($session, $documentType, 'pdf'));
     }
 
     private function downloadDocx(ExamSession $session, string $documentType): BinaryFileResponse
@@ -48,8 +50,14 @@ class ExportService
         $phpWord = new PhpWord;
         $section = $phpWord->addSection();
 
-        $section->addText($session->school_name, ['bold' => true, 'size' => 16]);
-        $section->addText(strtoupper($this->documentTitle($documentType)), ['bold' => true, 'size' => 14]);
+        $section->addText('BIMBINGAN BELAJAR', ['bold' => true, 'size' => 11], ['alignment' => 'center']);
+        $section->addText('L-G Learning', ['bold' => true, 'size' => 20, 'color' => 'f59e0b'], ['alignment' => 'center']);
+        $section->addText('Kemiri Pakukerto sukorejo', ['size' => 10], ['alignment' => 'center']);
+        $section->addText('WA : 085815222639 || website : l-glearning.com', ['bold' => true, 'size' => 10], ['alignment' => 'center']);
+        $section->addText(str_repeat('_', 50), ['bold' => true], ['alignment' => 'center']);
+        $section->addTextBreak();
+
+        $section->addText(strtoupper($this->documentTitle($documentType)), ['bold' => true, 'size' => 14], ['alignment' => 'center']);
         $section->addText("Mata Pelajaran: {$session->subject}");
         $section->addText("Kelas/Semester: {$session->class_level} / {$session->semester}");
         $section->addTextBreak();

@@ -46,5 +46,12 @@ class QuizController extends Controller
         return view('quizzes.show', compact('quiz'));
     }
 
+    public function destroy(Quiz $quiz)
+    {
+        abort_unless($quiz->examSession->user_id === Auth::id() || Auth::user()?->role === 'admin', 403);
 
+        $quiz->delete();
+
+        return redirect()->route('quizzes.index')->with('status', 'Quiz berhasil dihapus.');
+    }
 }

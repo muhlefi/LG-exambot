@@ -8,6 +8,29 @@
     <title>{{ $title ?? config('app.name', 'LG ExamBot') }}</title>
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        .swal2-styled.swal2-confirm { background-color: #f59e0b !important; border-radius: 1rem !important; font-weight: 800 !important; }
+        .swal2-popup { border-radius: 2rem !important; font-family: 'Inter', sans-serif !important; }
+    </style>
+    <script>
+        window.confirmDelete = function(formId, text = 'Data ini akan dihapus permanen!') {
+            Swal.fire({
+                title: 'Apakah Anda yakin?',
+                text: text,
+                icon: 'warning',
+                showCancelButton: true,
+                confirmButtonColor: '#f59e0b',
+                cancelButtonColor: '#111827',
+                confirmButtonText: 'Ya, hapus!',
+                cancelButtonText: 'Batal'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    document.getElementById(formId).submit();
+                }
+            });
+        }
+    </script>
 </head>
 <body class="font-sans antialiased text-ink">
     @auth
@@ -32,17 +55,21 @@
                         ['label' => 'Dashboard', 'route' => 'dashboard', 'match' => 'dashboard'],
                         ['label' => 'Sesi Soal', 'route' => 'sessions.index', 'match' => 'sessions.*'],
                         ['label' => 'Bank Soal', 'route' => 'bank.index', 'match' => 'bank.*'],
-                        ['label' => 'Quiz', 'route' => 'quizzes.index', 'match' => 'quizzes.index'],
-                        ['label' => 'Tutorial', 'route' => 'tutorial', 'match' => 'tutorial'],
-                        ['label' => 'Pengaturan', 'route' => 'settings', 'match' => 'settings'],
+                        ['label' => 'Quiz', 'route' => 'quizzes.index', 'match' => 'quizzes.*'],
                     ];
                 @endphp
                 
                 <div class="p-6">
-                    <div class="rounded-2xl bg-white/50 backdrop-blur-sm p-5 text-fern border border-fern/10 shadow-sm">
-                        <p class="text-xs font-bold uppercase tracking-wider opacity-80">Masuk sebagai</p>
-                        <p class="mt-1 text-lg font-black truncate">{{ auth()->user()->name }}</p>
-                        <p class="mt-1 text-xs font-bold uppercase tracking-[0.2em] opacity-80">{{ auth()->user()->role }}</p>
+                    <div class="rounded-[2rem] bg-limewash/50 backdrop-blur-sm p-6 border border-fern/10 shadow-inner group transition-all hover:bg-limewash">
+                        <div class="flex items-center gap-3">
+                            <div class="h-10 w-10 rounded-full bg-fern grid place-items-center text-white font-black shadow-md shadow-fern/20">
+                                {{ substr(auth()->user()->name, 0, 1) }}
+                            </div>
+                            <div class="flex-1 overflow-hidden">
+                                <p class="text-[10px] font-black uppercase tracking-[0.2em] text-fern/60 leading-none">Guru Aktif</p>
+                                <p class="mt-1.5 text-base font-black truncate text-ink">{{ auth()->user()->name }}</p>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -82,24 +109,26 @@
                 <main class="flex-1 overflow-y-auto p-6 lg:p-10">
                     <div class="max-w-7xl mx-auto">
                         @if (session('status'))
-                            <div class="mb-8 rounded-2xl border border-fern/20 bg-limewash px-6 py-4 text-sm font-bold text-fern flex items-center gap-3">
-                                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                                {{ session('status') }}
-                            </div>
+                            <script>
+                                Swal.fire({
+                                    icon: 'success',
+                                    title: 'Berhasil!',
+                                    text: "{{ session('status') }}",
+                                    timer: 3000,
+                                    showConfirmButton: false
+                                });
+                            </script>
                         @endif
 
                         @if ($errors->any())
-                            <div class="mb-8 rounded-2xl border border-clay/30 bg-[#fff4ec] px-6 py-5 text-sm text-clay shadow-sm">
-                                <div class="flex items-center gap-3 mb-2">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                                    <p class="font-black">Ada input yang perlu diperbaiki.</p>
-                                </div>
-                                <ul class="list-disc pl-8 space-y-1">
-                                    @foreach ($errors->all() as $error)
-                                        <li>{{ $error }}</li>
-                                    @endforeach
-                                </ul>
-                            </div>
+                            <script>
+                                Swal.fire({
+                                    icon: 'error',
+                                    title: 'Oops...',
+                                    text: "{{ $errors->first() }}",
+                                    confirmButtonColor: '#f59e0b'
+                                });
+                            </script>
                         @endif
 
                         {{ $slot ?? '' }}
@@ -132,7 +161,9 @@
                         </span>
                     </a>
                     <div class="flex items-center gap-3">
-                        <a href="{{ route('login') }}" class="rounded-full bg-ink px-6 py-2 text-sm font-bold text-white transition hover:bg-fern shadow-lg shadow-ink/20">Login</a>
+                        @if(!request()->routeIs('login'))
+                            <a href="{{ route('login') }}" class="rounded-full bg-ink px-6 py-2 text-sm font-bold text-white transition hover:bg-fern shadow-lg shadow-ink/20">Login</a>
+                        @endif
                     </div>
                 </div>
             </header>
