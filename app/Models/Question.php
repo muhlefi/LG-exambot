@@ -81,6 +81,20 @@ class Question extends Model
         // DomPDF needs simpler HTML and absolute URLs
         $text = Str::markdown($this->question_text);
 
+        // Render LaTeX to Images for PDF (DomPDF doesn't support JS)
+        // 1. Block Math $$ ... $$
+        $text = preg_replace_callback('/\$\$(.*?)\$\$/s', function ($matches) {
+            $latex = urlencode(trim($matches[1]));
+            return '<div style="text-align:center; margin:15px 0;"><img src="https://latex.codecogs.com/png.latex?\dpi{150}\bg_white ' . $latex . '" style="max-width:100%;"></div>';
+        }, $text);
+
+        // 2. Inline Math $ ... $
+        $text = preg_replace_callback('/\$([^\$]+)\$/', function ($matches) {
+            $latex = urlencode(trim($matches[1]));
+            return '<img src="https://latex.codecogs.com/png.latex?\inline&space;\dpi{150}\bg_white ' . $latex . '" style="vertical-align:middle; margin:0 2px; height:14px;">';
+        }, $text);
+
+        // Render AI Images/Diagrams
         return preg_replace_callback(
             ['/\[GAMBAR: (.*?)\]/i', '/\[DIAGRAM: (.*?)\]/i'],
             function ($matches) {

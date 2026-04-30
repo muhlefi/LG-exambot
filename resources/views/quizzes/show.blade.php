@@ -7,6 +7,9 @@
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
     <style>
         [x-cloak] { display: none !important; }
         .prose table { width: 100%; border-collapse: collapse; margin: 2rem 0; font-size: 1.5rem; }
@@ -21,8 +24,22 @@
         questions: {{ Js::from($quiz->examSession->questions) }},
         get currentQuestion() { return this.questions[this.currentIndex] },
         next() { if(this.currentIndex < this.questions.length - 1) { this.currentIndex++; this.showAnswer = false } },
-        prev() { if(this.currentIndex > 0) { this.currentIndex--; this.showAnswer = false } }
-    }" class="h-screen w-screen flex flex-col p-6 lg:p-12">
+        prev() { if(this.currentIndex > 0) { this.currentIndex--; this.showAnswer = false } },
+        renderMath() { 
+            this.$nextTick(() => { 
+                renderMathInElement(this.$el, { 
+                    delimiters: [
+                        {left: '$$', right: '$$', display: true}, 
+                        {left: '$', right: '$', display: false}
+                    ],
+                    throwOnError : false
+                }); 
+            }); 
+        }
+    }" 
+    x-init="renderMath()"
+    x-effect="currentIndex, showAnswer, renderMath()"
+    class="h-screen w-screen flex flex-col p-6 lg:p-12">
         
         <!-- Header -->
         <header class="flex items-center justify-between mb-8">
@@ -105,7 +122,7 @@
                                 :class="showAnswer && option.option_label === currentQuestion.answer_key ? 'bg-fern text-white' : 'bg-white/10 text-white'"
                                 x-text="option.option_label"
                             ></span>
-                            <p class="text-2xl font-bold" x-text="option.option_text"></p>
+                            <p class="text-2xl font-bold" x-html="marked.parseInline(option.option_text)"></p>
                             
                             <!-- Correct Badge -->
                             <template x-if="showAnswer && option.option_label === currentQuestion.answer_key">

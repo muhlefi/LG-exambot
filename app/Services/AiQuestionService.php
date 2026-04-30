@@ -160,7 +160,7 @@ class AiQuestionService
 
                     // 503 (overloaded) atau 429 (rate limit) → tunggu lalu retry
                     if (in_array($response->status(), [503, 429]) && $attempt < $maxRetries) {
-                        $delay = $attempt * 5; // 5s, 10s, 15s
+                        $delay = $response->status() === 429 ? ($attempt * 15) : ($attempt * 5); // Lebih lama jika 429
                         Log::info("Retrying model {$model} in {$delay}s (attempt {$attempt}/{$maxRetries})");
                         sleep($delay);
                         continue;
@@ -236,12 +236,10 @@ class AiQuestionService
     {
         $normalized = $this->normalizeGeminiModel($configuredModel);
         $fallbacks = [
-            'gemini-2.5-flash',
-            'gemini-2.0-flash',
-            'gemini-2.5-flash-lite',
-            'gemini-2.0-flash-lite',
             'gemini-1.5-flash',
             'gemini-1.5-pro',
+            'gemini-2.0-flash-exp',
+            'gemini-1.0-pro',
         ];
 
         return collect(array_merge([$normalized], $fallbacks))
@@ -327,6 +325,7 @@ Aturan Format Konten:
   | --- | --- |
   | Data 1 | Data 2 |
 - GAMBAR/DIAGRAM: Karena Anda berbasis teks, berikan deskripsi visual di dalam teks soal dengan format: [GAMBAR: deskripsi detail ilustrasi yang dibutuhkan] atau [DIAGRAM: deskripsi data diagram].
+- MATEMATIKA/SAINS: Untuk notasi matematika, fisika, atau kimia, WAJIB gunakan format LaTeX dengan pembungkus `\$...\$` untuk inline dan `\$\$... \$\$` untuk block. Contoh: `\$E = mc^2\$` atau `\$\$\frac{-b \pm \sqrt{b^2 - 4ac}}{2a}\$\$`.
 
 Kembalikan objek JSON:
 {
@@ -477,8 +476,15 @@ PROMPT;
             $this->createProviderBlueprint($question, $session, $structure, $cognitive, $item['blueprint'] ?? null);
         }
 
-        if ($groupCurrent !== $groupTargets) {
-            throw new RuntimeException('Provider output does not satisfy required difficulty distribution for the group.');
+        $totalTarget = array_sum($groupTargets);
+        if ($created < $totalTarget) {
+            Log::warning("Provider output partial", [
+                'expected' => $totalTarget,
+                'actual' => $created,
+                'distribution_expected' => $groupTargets,
+                'distribution_actual' => $groupCurrent,
+            ]);
+            throw new RuntimeException("AI hanya berhasil membuat {$created} dari {$totalTarget} soal yang diminta. Silakan coba lagi.");
         }
 
         return $created;

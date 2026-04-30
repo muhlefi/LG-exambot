@@ -1,5 +1,25 @@
 <x-layouts.app title="{{ $examSession->title }} - Builder">
-    <div x-data="{ generating: false }">
+    <div x-data="{ 
+        generating: false, 
+        questionType: 'Pilihan Ganda',
+        cognitiveLevels: ['C1 Mengingat', 'C2 Memahami', 'C3 Menerapkan'],
+        
+        isChoice() { 
+            return ['Pilihan Ganda', 'Pilihan Ganda Kompleks', 'HOTS'].includes(this.questionType) 
+        },
+        
+        updateDefaults() {
+            if (this.questionType === 'HOTS') {
+                this.cognitiveLevels = ['C4 Menganalisis', 'C5 Mengevaluasi', 'C6 Mencipta'];
+            } else if (['Essay', 'Studi Kasus'].includes(this.questionType)) {
+                this.cognitiveLevels = ['C3 Menerapkan', 'C4 Menganalisis', 'C5 Mengevaluasi'];
+            } else if (this.questionType === 'Isian Singkat') {
+                this.cognitiveLevels = ['C1 Mengingat', 'C2 Memahami'];
+            } else {
+                this.cognitiveLevels = ['C1 Mengingat', 'C2 Memahami', 'C3 Menerapkan'];
+            }
+        }
+    }" x-init="$watch('questionType', () => updateDefaults())">
     <nav class="mb-6 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-ink/30">
         <a href="{{ route('dashboard') }}" class="hover:text-fern">Dashboard</a>
         <span>/</span>
@@ -52,17 +72,17 @@
                 </label>
                 <label class="block">
                     <span class="text-sm font-black">Bentuk Soal</span>
-                    <select name="question_type" class="mt-2 w-full rounded-xl border border-ink/10 bg-white px-4 py-3 outline-none focus:border-fern">
+                    <select name="question_type" x-model="questionType" class="mt-2 w-full rounded-xl border border-ink/10 bg-white px-4 py-3 outline-none focus:border-fern">
                         @foreach (['Pilihan Ganda','Pilihan Ganda Kompleks','Benar Salah','Menjodohkan','Isian Singkat','Essay','HOTS','Studi Kasus'] as $type)
                             <option value="{{ $type }}">{{ $type }}</option>
                         @endforeach
                     </select>
                 </label>
-                <label class="block">
+                <label class="block" x-show="['Pilihan Ganda', 'Pilihan Ganda Kompleks', 'HOTS'].includes(questionType)" x-cloak x-transition>
                     <span class="text-sm font-black">Jumlah Opsi Jawaban</span>
                     <select name="option_count" class="mt-2 w-full rounded-xl border border-ink/10 bg-white px-4 py-3 outline-none focus:border-fern">
-                        @foreach ([4,5,6] as $count)
-                            <option value="{{ $count }}">{{ $count }} opsi</option>
+                        @foreach ([3,4,5] as $count)
+                            <option value="{{ $count }}" @selected($count == 4)>{{ $count }} opsi</option>
                         @endforeach
                     </select>
                 </label>
@@ -85,8 +105,17 @@
                     <p class="text-sm font-black">Dimensi Kognitif</p>
                     <div class="mt-3 grid gap-2 sm:grid-cols-2">
                         @foreach (['C1 Mengingat','C2 Memahami','C3 Menerapkan','C4 Menganalisis','C5 Mengevaluasi','C6 Mencipta'] as $level)
-                            <label class="flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2 text-sm font-bold">
-                                <input type="checkbox" name="cognitive_levels[]" value="{{ $level }}" @checked(in_array($level, old('cognitive_levels', ['C1 Mengingat','C2 Memahami','C3 Menerapkan'])))>
+                            @php
+                                $isHigh = in_array($level, ['C4 Menganalisis','C5 Mengevaluasi','C6 Mencipta']);
+                                $isLow = in_array($level, ['C1 Mengingat','C2 Memahami']);
+                            @endphp
+                            <label 
+                                class="flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2 text-sm font-bold transition-all"
+                                x-show="questionType !== 'HOTS' || {{ $isHigh ? 'true' : 'false' }}"
+                                :class="cognitiveLevels.includes('{{ $level }}') ? 'border-fern bg-fern/5' : 'border-transparent'"
+                                x-transition
+                            >
+                                <input type="checkbox" name="cognitive_levels[]" value="{{ $level }}" x-model="cognitiveLevels">
                                 {{ $level }}
                             </label>
                         @endforeach
@@ -96,17 +125,22 @@
                 <div>
                     <p class="text-sm font-black">Tambahkan Media</p>
                     <div class="mt-3 grid gap-2 sm:grid-cols-2">
-                        @foreach ([
-                            'has_question_image' => 'Gambar soal',
-                            'has_option_image' => 'Gambar opsi',
-                            'has_diagram' => 'Diagram',
-                            'has_table' => 'Tabel',
-                        ] as $name => $label)
-                            <label class="flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2 text-sm font-bold">
-                                <input type="checkbox" name="{{ $name }}" value="1">
-                                {{ $label }}
-                            </label>
-                        @endforeach
+                        <label class="flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2 text-sm font-bold">
+                            <input type="checkbox" name="has_question_image" value="1">
+                            Gambar soal
+                        </label>
+                        <label class="flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2 text-sm font-bold" x-show="isChoice()" x-cloak x-transition>
+                            <input type="checkbox" name="has_option_image" value="1">
+                            Gambar opsi
+                        </label>
+                        <label class="flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2 text-sm font-bold">
+                            <input type="checkbox" name="has_diagram" value="1">
+                            Diagram
+                        </label>
+                        <label class="flex items-center gap-2 rounded-xl bg-white/70 px-3 py-2 text-sm font-bold">
+                            <input type="checkbox" name="has_table" value="1">
+                            Tabel
+                        </label>
                     </div>
                 </div>
 

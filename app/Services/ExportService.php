@@ -49,6 +49,11 @@ class ExportService
         $path = storage_path('app/exports/'.$this->filename($session, $documentType, 'docx'));
         $phpWord = new PhpWord;
         $section = $phpWord->addSection();
+        $section->addImage(public_path('img/logo.png'), [
+            'width' => 60,
+            'height' => 60,
+            'alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER
+        ]);
 
         $section->addText('BIMBINGAN BELAJAR', ['bold' => true, 'size' => 11], ['alignment' => 'center']);
         $section->addText('L-G Learning', ['bold' => true, 'size' => 20, 'color' => 'f59e0b'], ['alignment' => 'center']);

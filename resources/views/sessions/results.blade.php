@@ -41,8 +41,21 @@
                 this.selectedQuestions = Array.from(document.querySelectorAll('.question-checkbox')).map(el => el.value);
                 this.allSelected = true;
             }
+        },
+        renderMath() {
+            this.$nextTick(() => {
+                if (window.renderMathInElement) {
+                    renderMathInElement(document.body, {
+                        delimiters: [
+                            {left: '$$', right: '$$', display: true},
+                            {left: '$', right: '$', display: false}
+                        ],
+                        throwOnError: false
+                    });
+                }
+            });
         }
-    }">
+    }" x-init="renderMath()" x-effect="tab, renderMath()">
         <section class="paper-panel rounded-[2rem] p-6">
             <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
                 <div class="flex flex-wrap gap-2">

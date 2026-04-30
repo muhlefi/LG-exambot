@@ -14,12 +14,19 @@
     </style>
 </head>
 <body>
-    <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px;">
-        <h3 style="margin: 0; font-size: 14px; font-weight: bold; text-transform: uppercase;">BIMBINGAN BELAJAR</h3>
-        <h1 style="margin: 0; font-size: 28px; font-weight: black; color: #f59e0b;">L-G Learning</h1>
-        <p style="margin: 2px 0; font-size: 11px;">Kemiri Pakukerto sukorejo</p>
-        <p style="margin: 0; font-size: 11px; font-weight: bold;">WA : 085815222639 II website : l-glearning.com</p>
-    </div>
+    <table style="width: 100%; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px;">
+        <tr>
+            <td style="width: 80px; vertical-align: middle;">
+                <img src="{{ public_path('img/logo.png') }}" style="width: 80px; height: 80px;">
+            </td>
+            <td style="text-align: center; vertical-align: middle; padding-right: 80px;">
+                <h3 style="margin: 0; font-size: 14px; font-weight: bold; text-transform: uppercase;">BIMBINGAN BELAJAR</h3>
+                <h1 style="margin: 0; font-size: 28px; font-weight: black; color: #f59e0b;">L-G Learning</h1>
+                <p style="margin: 2px 0; font-size: 11px;">Kemiri Pakukerto sukorejo</p>
+                <p style="margin: 0; font-size: 11px; font-weight: bold;">WA : 085815222639 II website : l-glearning.com</p>
+            </td>
+        </tr>
+    </table>
 
     <h2 style="text-align: center; margin-bottom: 10px; font-size: 16px;">
         @if ($documentType === 'answers')
@@ -79,7 +86,7 @@
                 @if ($question->options->isNotEmpty())
                     <div class="options">
                         @foreach ($question->options as $option)
-                            <div>{{ $option->option_label }}. {{ $option->option_text }}</div>
+                            <div>{{ $option->option_label }}. {!! $option->pdf_formatted_text !!}</div>
                         @endforeach
                     </div>
                 @endif
