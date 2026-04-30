@@ -125,12 +125,17 @@ class AiQuestionService
                 ]],
             ];
 
-            $response = Http::timeout(150)
+            $request = Http::timeout(150)
                 ->acceptJson()
                 ->withHeaders([
                     'Content-Type' => 'application/json',
-                ])
-                ->post($endpoint, $payload);
+                ]);
+
+            if (app()->environment('local')) {
+                $request->withoutVerifying();
+            }
+
+            $response = $request->post($endpoint, $payload);
 
             if (! $response->successful()) {
                 $errorBody = (string) data_get($response->json(), 'error.message', $response->body());
@@ -201,9 +206,10 @@ class AiQuestionService
     {
         $normalized = $this->normalizeGeminiModel($configuredModel);
         $fallbacks = [
-            'gemini-3-flash',
             'gemini-2.5-flash',
             'gemini-2.5-flash-lite',
+            'gemini-3.1-flash-lite-preview',
+            'gemini-1.5-flash',
         ];
 
         return collect(array_merge([$normalized], $fallbacks))
@@ -247,6 +253,19 @@ class AiQuestionService
 
         $subtopic = $session->subtopic ?? '-';
 
+        $visual = collect([
+            'has_question_image' => 'Gambar soal',
+            'has_option_image' => 'Gambar opsi jawaban',
+            'has_diagram' => 'Diagram',
+            'has_table' => 'Tabel data',
+        ])->filter(fn($label, $key) => $structures->contains($key, true))
+          ->values()
+          ->implode(', ');
+
+        if (empty($visual)) {
+            $visual = 'Hanya teks (tanpa media khusus)';
+        }
+
         return <<<PROMPT
 Buat soal asesmen berbahasa Indonesia dalam format JSON murni.
 
@@ -262,6 +281,12 @@ Struktur yang harus dipenuhi:
 - distribusi: Mudah {$easy}, Sedang {$medium}, Sulit {$hard}
 - option_count (jika relevan): {$optionCount}
 - level kognitif yang boleh: {$levels}
+
+Aturan Variasi Media:
+- Pengguna mengaktifkan: {$visual}
+- JANGAN berikan semua media tersebut dalam satu soal.
+- Distribusikan secara acak: satu soal mungkin hanya punya gambar, soal lain mungkin hanya tabel, soal lain mungkin hanya diagram, dan sebagian soal lainnya (sekitar 30%) harus murni teks tanpa media.
+- Pastikan variasi ini terasa natural.
 
 Kembalikan objek JSON:
 {
@@ -544,13 +569,21 @@ PROMPT;
 
     private function questionText(ExamSession $session, QuestionStructure $structure, string $difficulty, string $cognitive, int $sequence): string
     {
-        $visual = collect([
-            $structure->has_question_image ? 'sertakan konteks gambar' : null,
-            $structure->has_diagram ? 'gunakan diagram sederhana' : null,
-            $structure->has_table ? 'gunakan data tabel' : null,
-        ])->filter()->implode(', ');
+        // Ambil daftar media yang diaktifkan
+        $availableMedia = collect([
+            'has_question_image' => 'sertakan konteks gambar',
+            'has_option_image' => 'sertakan gambar pada opsi jawaban',
+            'has_diagram' => 'gunakan diagram sederhana',
+            'has_table' => 'gunakan data tabel',
+        ])->filter(fn($label, $key) => $structure->{$key});
 
-        $visualInstruction = $visual ? " Pertimbangkan instruksi visual: {$visual}." : '';
+        $visualInstruction = '';
+        
+        // Randomisasi: 70% peluang mendapatkan media jika ada media yang tersedia
+        if ($availableMedia->isNotEmpty() && rand(1, 100) <= 70) {
+            $picked = $availableMedia->random();
+            $visualInstruction = " Pertimbangkan instruksi visual: {$picked}.";
+        }
 
         return "Soal {$sequence} ({$difficulty}, {$cognitive}). Pada materi {$session->topic}"
             . ($session->subtopic ? " submateri {$session->subtopic}" : '')

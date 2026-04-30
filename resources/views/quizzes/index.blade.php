@@ -4,7 +4,7 @@
             <p class="text-sm font-black uppercase tracking-[0.24em] text-fern">Mode Quiz</p>
             <h1 class="ink-heading text-5xl font-black">Quiz aktif dan riwayat</h1>
         </div>
-        <a href="{{ route('quizzes.join.form') }}" class="rounded-full border border-ink/10 bg-white/70 px-5 py-3 text-sm font-black">Halaman Join</a>
+
     </div>
 
     <div class="paper-panel overflow-hidden rounded-[2rem]">
@@ -15,9 +15,11 @@
                         <h2 class="text-lg font-black">{{ $quiz->title }}</h2>
                         <p class="mt-2 text-sm text-ink/60">{{ $quiz->examSession->subject }} · {{ $quiz->examSession->topic }}</p>
                     </div>
-                    <div class="text-sm font-bold text-ink/60">
-                        <p>Kode: <span class="text-ink">{{ $quiz->quiz_code }}</span></p>
-                        <p>{{ $quiz->participants_count }} peserta</p>
+                    <div class="flex flex-col items-end gap-2 text-sm font-bold text-ink/60">
+                        <span class="rounded-full bg-honey px-3 py-1 text-[10px] font-black uppercase tracking-wider text-ink">Presentation Mode</span>
+                        <div class="text-right">
+                            <p>Kode: <span class="text-ink">{{ $quiz->quiz_code }}</span></p>
+                        </div>
                     </div>
                 </a>
             @empty

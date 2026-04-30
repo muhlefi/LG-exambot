@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\AiProviderException;
 use App\Models\ExamSession;
+use App\Models\Question;
 use App\Models\QuestionStructure;
 use App\Services\AiQuestionService;
 use App\Services\ExportService;
@@ -63,6 +64,49 @@ class ExamSessionController extends Controller
         $examSession->load('structures');
 
         return view('sessions.show', compact('examSession'));
+    }
+
+    public function edit(ExamSession $examSession)
+    {
+        $this->authorizeOwner($examSession);
+        return view('sessions.edit', compact('examSession'));
+    }
+
+    public function update(Request $request, ExamSession $examSession)
+    {
+        $this->authorizeOwner($examSession);
+
+        $data = $request->validate([
+            'title' => ['required', 'string', 'max:255'],
+            'teacher_name' => ['required', 'string', 'max:255'],
+            'school_name' => ['required', 'string', 'max:255'],
+            'logo' => ['nullable', 'image', 'max:2048'],
+            'education_level' => ['required', 'string', 'max:100'],
+            'learning_phase' => ['nullable', 'string', 'max:100'],
+            'class_level' => ['required', 'string', 'max:100'],
+            'semester' => ['required', 'string', 'max:100'],
+            'academic_year' => ['required', 'string', 'max:100'],
+            'subject' => ['required', 'string', 'max:255'],
+            'topic' => ['required', 'string', 'max:255'],
+            'subtopic' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        if ($request->hasFile('logo')) {
+            $data['logo_path'] = $request->file('logo')->store('school-logos', 'public');
+        }
+
+        $examSession->update($data);
+
+        return redirect()->route('sessions.show', $examSession)->with('status', 'Sesi berhasil diperbarui.');
+    }
+
+    public function destroy(ExamSession $examSession)
+    {
+        $this->authorizeOwner($examSession);
+
+        $examSession->delete();
+
+        return redirect()->route('sessions.index')->with('status', 'Sesi berhasil dihapus.');
     }
 
     public function addStructure(Request $request, ExamSession $examSession)
@@ -128,6 +172,7 @@ class ExamSessionController extends Controller
     public function generate(ExamSession $examSession, AiQuestionService $aiQuestionService)
     {
         $this->authorizeOwner($examSession);
+        set_time_limit(300);
 
         try {
             $created = $aiQuestionService->generate($examSession);
@@ -154,10 +199,21 @@ class ExamSessionController extends Controller
     public function export(ExamSession $examSession, string $documentType, string $format, ExportService $exportService)
     {
         $this->authorizeOwner($examSession);
+        set_time_limit(180);
         abort_unless(in_array($documentType, ['questions', 'answers', 'blueprint'], true), 404);
         abort_unless(in_array($format, ['pdf', 'docx'], true), 404);
 
         return $exportService->download($examSession, $documentType, $format);
+    }
+
+    public function destroyQuestion(Question $question)
+    {
+        $session = $question->examSession;
+        $this->authorizeOwner($session);
+
+        $question->delete();
+
+        return back()->with('status', 'Soal berhasil dihapus.');
     }
 
     private function authorizeOwner(ExamSession $examSession): void

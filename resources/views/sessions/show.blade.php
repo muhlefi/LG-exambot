@@ -6,15 +6,29 @@
             <p class="mt-2 text-sm text-ink/60">{{ $examSession->school_name }} · {{ $examSession->subject }} · {{ $examSession->topic }}</p>
         </div>
         <div class="flex flex-wrap gap-3">
-            <a href="{{ route('sessions.results', $examSession) }}" class="rounded-full border border-ink/10 bg-white/70 px-5 py-3 text-sm font-black text-ink">Lihat Hasil</a>
+            <a href="{{ route('sessions.results', $examSession) }}" class="rounded-full border border-fern/30 bg-white/70 px-5 py-3 text-sm font-black text-fern transition hover:bg-limewash">Lihat Hasil</a>
             <form method="POST" action="{{ route('sessions.generate', $examSession) }}">
                 @csrf
-                <button @disabled($examSession->structures->isEmpty()) class="rounded-full bg-fern px-5 py-3 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-ink/30">Generate Naskah Soal</button>
+                <button @disabled($examSession->structures->isEmpty()) class="rounded-full bg-fern px-6 py-3 text-sm font-black text-white shadow-lg shadow-fern/20 transition hover:scale-105 disabled:cursor-not-allowed disabled:bg-ink/30 disabled:shadow-none">Generate Naskah Soal</button>
             </form>
         </div>
     </div>
 
-    <div class="grid gap-6 xl:grid-cols-[420px_1fr]">
+    <div class="grid gap-6 xl:grid-cols-[420px_1fr]" x-data="{ generating: false }">
+        <!-- Loading Overlay -->
+        <template x-if="generating">
+            <div class="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-white/90 backdrop-blur-md">
+                <div class="relative">
+                    <div class="h-24 w-24 animate-spin rounded-full border-8 border-fern/10 border-t-fern"></div>
+                    <div class="absolute inset-0 flex items-center justify-center">
+                        <span class="text-xs font-black uppercase text-fern">AI</span>
+                    </div>
+                </div>
+                <h2 class="ink-heading mt-8 text-4xl font-black text-ink">Menyusun Naskah Soal...</h2>
+                <p class="mt-4 animate-pulse text-sm font-bold text-ink/50">Mohon tunggu, AI sedang merancang butir soal sesuai struktur Anda.</p>
+            </div>
+        </template>
+
         <section class="paper-panel rounded-[2rem] p-6">
             <h2 class="ink-heading text-3xl font-black">Tambah Bagian</h2>
             <form method="POST" action="{{ route('sessions.structures.store', $examSession) }}" class="mt-6 space-y-5">
@@ -83,14 +97,20 @@
                     </div>
                 </div>
 
-                <button class="w-full rounded-2xl bg-honey px-5 py-3 font-black text-ink">Tambahkan ke Struktur</button>
+                <button class="w-full rounded-2xl bg-fern px-5 py-4 font-black text-white shadow-lg shadow-fern/20 transition hover:-translate-y-0.5">Tambahkan ke Struktur</button>
             </form>
         </section>
 
         <section class="paper-panel rounded-[2rem] p-6" x-data="structureSorter">
             <div class="mb-5 flex items-center justify-between">
                 <h2 class="ink-heading text-3xl font-black">Preview Struktur</h2>
-                <span class="rounded-full bg-limewash px-4 py-2 text-sm font-black text-fern">{{ $examSession->structures->sum('total_questions') }} soal</span>
+                <div class="flex items-center gap-3">
+                    <span class="rounded-full bg-limewash px-4 py-2 text-sm font-black text-fern">{{ $examSession->structures->sum('total_questions') }} soal</span>
+                    <form method="POST" action="{{ route('sessions.generate', $examSession) }}" @submit="generating = true">
+                        @csrf
+                        <button @disabled($examSession->structures->isEmpty()) class="rounded-full bg-fern px-6 py-3 text-sm font-black text-white shadow-lg shadow-fern/20 transition hover:scale-105 disabled:cursor-not-allowed disabled:bg-ink/30 disabled:shadow-none">Generate Naskah Soal</button>
+                    </form>
+                </div>
             </div>
 
             <div class="space-y-3" x-ref="list">
@@ -99,7 +119,7 @@
                         <div class="flex flex-col justify-between gap-4 md:flex-row">
                             <div>
                                 <div class="flex items-center gap-2">
-                                    <button type="button" class="drag-handle cursor-grab rounded-full bg-ink px-3 py-1 text-xs font-black text-white">drag</button>
+                                    <button type="button" class="drag-handle cursor-grab rounded-full bg-fern px-3 py-1 text-[10px] font-black uppercase text-white shadow-sm">drag</button>
                                     <h3 class="text-lg font-black">{{ $structure->name ?: 'Bagian '.$loop->iteration }}</h3>
                                 </div>
                                 <p class="mt-2 text-sm text-ink/60">{{ $structure->question_type }} · {{ $structure->total_questions }} soal · {{ $structure->option_count }} opsi</p>

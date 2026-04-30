@@ -2,17 +2,19 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\BankQuestion;
+use App\Models\Question;
 use Illuminate\Support\Facades\Auth;
 
 class BankQuestionController extends Controller
 {
     public function __invoke()
     {
-        $questions = BankQuestion::query()
-            ->where(fn ($query) => $query->where('scope', 'public')->orWhere('user_id', Auth::id()))
+        $questions = Question::whereHas('examSession', function ($query) {
+                $query->where('user_id', Auth::id());
+            })
+            ->with(['examSession', 'options'])
             ->latest()
-            ->paginate(12);
+            ->paginate(15);
 
         return view('bank.index', compact('questions'));
     }

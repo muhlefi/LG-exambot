@@ -59,8 +59,8 @@
                 <span class="text-sm font-black">Sub Materi</span>
                 <input name="subtopic" value="{{ old('subtopic') }}" class="mt-2 w-full rounded-2xl border border-ink/10 bg-white px-4 py-3 outline-none focus:border-fern">
             </label>
-            <div class="md:col-span-2">
-                <button class="rounded-full bg-fern px-6 py-3 text-sm font-black text-white">Selanjutnya</button>
+            <div class="mt-4 md:col-span-2">
+                <button class="rounded-full bg-fern px-10 py-4 text-sm font-black text-white shadow-xl shadow-fern/20 transition hover:-translate-y-1">Buat Sesi & Lanjutkan</button>
             </div>
         </form>
     </div>

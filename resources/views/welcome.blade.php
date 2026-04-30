@@ -8,7 +8,6 @@
             </p>
             <div class="mt-8 flex flex-wrap gap-3">
                 <a href="{{ route('register') }}" class="rounded-full bg-fern px-6 py-3 text-sm font-black text-white shadow-xl shadow-fern/20 transition hover:-translate-y-0.5">Mulai Buat Sesi</a>
-                <a href="{{ route('quizzes.join.form') }}" class="rounded-full border border-ink/15 bg-white/70 px-6 py-3 text-sm font-black text-ink transition hover:bg-honey">Join Quiz</a>
             </div>
         </div>
 
