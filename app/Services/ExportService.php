@@ -8,7 +8,6 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Ismaelw\LaraTeX\LaraTeX;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -35,29 +34,16 @@ class ExportService
             'format' => 'pdf',
         ]);
 
-        // Gunakan LaraTeX untuk PDF dengan LaTeX
-        try {
-            $latex = new LaraTeX();
-            
-            // Render template LaTeX dengan data
-            $pdf = $latex->render('exports.latex-document', [
-                'session' => $session,
-                'documentType' => $documentType,
-                'documentTitle' => $this->documentTitle($documentType),
-            ]);
-            
-            return $pdf->download($this->filename($session, $documentType, 'pdf'));
-        } catch (\Exception $e) {
-            // Fallback ke DomPDF jika LaTeX gagal
-            \Log::error('LaraTeX failed: ' . $e->getMessage());
-            
-            return Pdf::loadView('exports.document', [
-                'session' => $session,
-                'documentType' => $documentType,
-            ])->setPaper('a4')
-              ->setOptions(['isRemoteEnabled' => true])
-              ->download($this->filename($session, $documentType, 'pdf'));
-        }
+        return Pdf::loadView('exports.document', [
+            'session' => $session,
+            'documentType' => $documentType,
+        ])->setPaper('a4')
+          ->setOptions([
+              'isRemoteEnabled' => true,
+              'isHtml5ParserEnabled' => true,
+              'defaultFont' => 'DejaVu Sans',
+          ])
+          ->download($this->filename($session, $documentType, 'pdf'));
     }
 
     private function downloadDocx(ExamSession $session, string $documentType): BinaryFileResponse
@@ -86,19 +72,27 @@ class ExportService
         $section->addTextBreak();
 
         foreach ($session->questions as $index => $question) {
-            // Untuk DOCX, tetap gunakan text biasa (LaTeX tidak support di DOCX)
-            $section->addText(($index + 1).'. '. strip_tags($question->question_text));
+            $questionHtml = '<div>' . ($index + 1) . '. ' . $question->pdf_formatted_text . '</div>';
+            
+            if ($question->question_image) {
+                $imagePath = public_path('storage/' . $question->question_image);
+                $questionHtml .= '<div style="text-align: center;"><img src="' . $imagePath . '" style="width: 250px; height: auto;"></div>';
+            }
+
+            \PhpOffice\PhpWord\Shared\Html::addHtml($section, $questionHtml, false, false);
+
             foreach ($question->options as $option) {
-                $section->addText("   {$option->option_label}. {$option->option_text}");
+                $optionHtml = '<div style="margin-left: 50px;">' . $option->option_label . '. ' . $option->pdf_formatted_text . '</div>';
+                \PhpOffice\PhpWord\Shared\Html::addHtml($section, $optionHtml, false, false);
             }
 
             if ($documentType !== 'questions') {
-                $section->addText("Kunci: {$question->answer_key}");
-                $section->addText("Pembahasan: " . strip_tags($question->explanation));
+                \PhpOffice\PhpWord\Shared\Html::addHtml($section, '<div><b>Kunci:</b> ' . $question->answer_key . '</div>', false, false);
+                \PhpOffice\PhpWord\Shared\Html::addHtml($section, '<div><b>Pembahasan:</b> ' . $question->explanation . '</div>', false, false);
             }
 
             if ($documentType === 'blueprint' && $question->blueprint) {
-                $section->addText("Kisi-kisi: {$question->blueprint->indicator}");
+                \PhpOffice\PhpWord\Shared\Html::addHtml($section, '<div><b>Kisi-kisi:</b> ' . $question->blueprint->indicator . '</div>', false, false);
             }
 
             $section->addTextBreak();

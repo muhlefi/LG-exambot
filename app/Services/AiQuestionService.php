@@ -9,6 +9,7 @@ use App\Models\Question;
 use App\Models\QuestionBlueprint;
 use App\Models\QuestionOption;
 use App\Models\QuestionStructure;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -32,39 +33,63 @@ class AiQuestionService
             $session->questions()->delete();
 
             $created = 0;
-            $provider = (string) config('services.ai.default_provider', 'local-draft');
+            $usedProviderName = 'none';
             $usedProvider = false;
 
             // Group structures by question_type to minimize API requests
             $groups = $session->structures->groupBy('question_type');
 
             foreach ($groups as $questionType => $structures) {
-                if ($this->shouldUseGemini($provider)) {
-                    $generated = $this->generateForGroupWithGemini($session, $structures, $created);
-                    if ($generated !== null) {
+                $groupGenerated = false;
+
+                // Coba semua provider yang punya API key
+                $providersToTry = $this->getAvailableProviders();
+
+                foreach ($providersToTry as $providerName) {
+                    Log::info("Attempting to generate with {$providerName}", [
+                        'exam_session_id' => $session->id,
+                        'question_type' => $questionType,
+                    ]);
+
+                    $generated = $this->tryProvider($providerName, $session, $structures, $created);
+                    
+                    if ($generated !== null && $generated > 0) {
                         $created += $generated;
                         $usedProvider = true;
-
-                        continue;
+                        $usedProviderName = $providerName;
+                        $groupGenerated = true;
+                        Log::info("✅ Successfully generated with {$providerName}", [
+                            'questions_count' => $generated,
+                            'exam_session_id' => $session->id,
+                        ]);
+                        break;
                     }
+                    
+                    Log::info("{$providerName} failed, trying next provider");
                 }
 
-                foreach ($structures as $structure) {
-                    $created += $this->generateForStructureLocal($session, $structure, $created);
+                // Final fallback to local-draft if all providers failed
+                if (!$groupGenerated) {
+                    Log::warning("All AI providers failed for question type {$questionType}, falling back to local draft", [
+                        'exam_session_id' => $session->id,
+                    ]);
+                    foreach ($structures as $structure) {
+                        $created += $this->generateForStructureLocal($session, $structure, $created);
+                    }
                 }
             }
 
             AiUsageLog::create([
                 'user_id' => $session->user_id,
                 'exam_session_id' => $session->id,
-                'provider' => $provider,
+                'provider' => $usedProviderName,
                 'tokens_used' => Str::of($this->promptBuilder->build($session))->wordCount(),
                 'status' => 'success',
                 'metadata' => [
                     'mode' => $usedProvider ? 'provider-used' : 'local-draft',
                     'note' => $usedProvider
-                        ? 'Gemini API used with per-structure fallback to local draft.'
-                        : 'Local deterministic generator is used (provider unavailable or response invalid).',
+                        ? "{$usedProviderName} API used with fallback to local draft."
+                        : 'Local deterministic generator is used (all providers unavailable or failed).',
                 ],
             ]);
 
@@ -74,51 +99,76 @@ class AiQuestionService
         });
     }
 
-    private function shouldUseGemini(string $provider): bool
+    private function getAvailableProviders(): array
     {
-        return Str::lower(trim($provider)) === 'gemini' && filled(config('services.ai.gemini_key'));
+        $providers = [];
+        
+        if (filled(config('services.ai.gemini_key'))) {
+            $providers[] = 'gemini';
+        }
+        if (filled(config('services.ai.groq_key'))) {
+            $providers[] = 'groq';
+        }
+        if (filled(config('services.ai.deepseek_key'))) {
+            $providers[] = 'deepseek';
+        }
+        if (filled(config('services.ai.openai_key'))) {
+            $providers[] = 'openai';
+        }
+        if (filled(config('services.ai.mistral_key'))) {
+            $providers[] = 'mistral';
+        }
+        
+        return $providers;
     }
 
-    private function generateForGroupWithGemini(ExamSession $session, \Illuminate\Support\Collection $structures, int $offset): ?int
+    private function tryProvider(string $provider, ExamSession $session, Collection $structures, int $offset): ?int
+    {
+        return match($provider) {
+            'gemini' => $this->generateWithGemini($session, $structures, $offset),
+            'groq' => $this->generateWithGroq($session, $structures, $offset),
+            'deepseek' => $this->generateWithDeepSeek($session, $structures, $offset),
+            'openai' => $this->generateWithOpenAI($session, $structures, $offset),
+            'mistral' => $this->generateWithMistral($session, $structures, $offset),
+            default => null,
+        };
+    }
+
+    // ================== GEMINI ==================
+    
+    private function generateWithGemini(ExamSession $session, Collection $structures, int $offset): ?int
     {
         try {
-            $payload = $this->requestGeminiQuestions($session, $structures);
-            if (! isset($payload['questions']) || ! is_array($payload['questions'])) {
+            $payload = $this->requestGemini($session, $structures);
+            if ($payload === null || !isset($payload['questions']) || !is_array($payload['questions'])) {
                 return null;
             }
-
             return $this->persistProviderQuestions($session, $structures, $offset, $payload['questions']);
-        } catch (Throwable $exception) {
-            if ($this->shouldAbortProviderFallback($exception)) {
-                throw new AiProviderException($this->providerErrorMessage($exception), $exception);
-            }
-
-            Log::warning('Gemini generation failed, falling back to local draft.', [
-                'exam_session_id' => $session->id,
-                'question_structure_ids' => $structures->pluck('id')->all(),
-                'error' => $exception->getMessage(),
-            ]);
-
+        } catch (Throwable $e) {
+            Log::warning("Gemini error: " . $e->getMessage());
             return null;
         }
     }
 
-    private function requestGeminiQuestions(ExamSession $session, \Illuminate\Support\Collection $structures): array
+    private function requestGemini(ExamSession $session, Collection $structures): ?array
     {
-        $configuredModel = (string) config('services.ai.gemini_model', 'gemini-1.5-flash');
-        $apiKey = (string) config('services.ai.gemini_key');
-        $models = $this->candidateGeminiModels($configuredModel);
-        $lastError = 'Gemini request failed.';
-        $prompt = $this->buildGeminiPrompt($session, $structures);
-        $maxRetries = 3;
-
-        foreach ($models as $model) {
-            $endpoint = sprintf(
-                'https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s',
-                rawurlencode($model),
-                $apiKey
-            );
-
+        $apiKey = config('services.ai.gemini_key');
+        $model = $session->ai_model ?: config('services.ai.gemini_model', 'gemini-1.5-flash');
+        $prompt = $this->buildPrompt($session, $structures);
+        
+        $modelsToTry = [
+            $model,
+            'gemini-3.1-flash-lite',
+            'gemini-2.5-flash-lite',
+            'gemini-3.0-flash',
+            'gemini-2.5-flash',
+            'gemini-2.0-flash',
+            'gemini-1.5-flash',
+        ];
+        
+        foreach ($modelsToTry as $modelName) {
+            $endpoint = "https://generativelanguage.googleapis.com/v1beta/models/{$modelName}:generateContent?key={$apiKey}";
+            
             $payload = [
                 'contents' => [[
                     'parts' => [[
@@ -128,142 +178,341 @@ class AiQuestionService
                 'generationConfig' => [
                     'responseMimeType' => 'application/json',
                     'temperature' => 0.7,
+                    'maxOutputTokens' => 8192,
                 ],
             ];
-
-            for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
-                $request = Http::timeout(150)
-                    ->acceptJson()
-                    ->withHeaders(['Content-Type' => 'application/json']);
-
-                if (app()->environment('local')) {
-                    $request->withoutVerifying();
-                }
-
-                $response = $request->post($endpoint, $payload);
-
-                if (! $response->successful()) {
-                    $errorBody = (string) data_get($response->json(), 'error.message', $response->body());
-                    $lastError = "[{$model}|attempt {$attempt}] HTTP {$response->status()}: {$errorBody}";
-
-                    Log::info("Gemini attempt failed", [
-                        'model' => $model,
-                        'attempt' => $attempt,
-                        'status' => $response->status(),
-                        'error' => $errorBody,
-                    ]);
-
-                    // API Key salah → langsung gagal, jangan retry
-                    if (in_array($response->status(), [401, 403])) {
-                        throw new RuntimeException($lastError);
-                    }
-
-                    // 503 (overloaded) atau 429 (rate limit) → tunggu lalu retry
-                    if (in_array($response->status(), [503, 429]) && $attempt < $maxRetries) {
-                        $delay = $response->status() === 429 ? ($attempt * 15) : ($attempt * 5); // Lebih lama jika 429
-                        Log::info("Retrying model {$model} in {$delay}s (attempt {$attempt}/{$maxRetries})");
-                        sleep($delay);
+            
+            try {
+                $response = Http::timeout(120)
+                    ->withHeaders(['Content-Type' => 'application/json'])
+                    ->when(app()->environment('local'), fn($http) => $http->withoutVerifying())
+                    ->post($endpoint, $payload);
+                
+                if (!$response->successful()) {
+                    $status = $response->status();
+                    $errorBody = $response->json('error.message') ?? $response->body();
+                    
+                    // Rate limit atau quota habis → coba model lain atau provider lain
+                    if ($status === 429 || Str::contains($errorBody, ['quota', 'rate limit'])) {
+                        Log::info("Gemini {$modelName} rate limit/quota exceeded, trying next model");
                         continue;
                     }
-
-                    break; // Gagal non-retryable → pindah ke model berikutnya
-                }
-
-                $text = data_get($response->json(), 'candidates.0.content.parts.0.text');
-                if (! is_string($text) || trim($text) === '') {
-                    $lastError = sprintf('[%s] Gemini response is empty.', $model);
-                    break;
-                }
-
-                try {
-                    return $this->decodeProviderJson($text);
-                } catch (RuntimeException $e) {
-                    $lastError = "[{$model}] " . $e->getMessage();
-                    Log::warning("JSON decode failed for model {$model}, attempt {$attempt}", [
-                        'error' => $e->getMessage(),
-                        'raw_length' => strlen($text),
-                    ]);
-
-                    // Jika JSON gagal parse, retry mungkin membantu
-                    if ($attempt < $maxRetries) {
-                        sleep(2);
-                        continue;
+                    
+                    // Auth error → skip semua Gemini
+                    if (in_array($status, [401, 403])) {
+                        Log::warning("Gemini auth error, skipping all Gemini models");
+                        return null;
                     }
-                    break;
+                    
+                    // Error lain → coba model berikutnya
+                    continue;
                 }
+                
+                $text = $response->json('candidates.0.content.parts.0.text');
+                if (empty($text)) {
+                    continue;
+                }
+                
+                return $this->decodeJson($text);
+                
+            } catch (Throwable $e) {
+                Log::warning("Gemini {$modelName} request error: " . $e->getMessage());
+                continue;
             }
         }
-
-        throw new RuntimeException($lastError);
+        
+        return null;
     }
 
-    private function shouldAbortProviderFallback(Throwable $exception): bool
+    // ================== GROQ ==================
+    
+    private function generateWithGroq(ExamSession $session, Collection $structures, int $offset): ?int
     {
-        $message = Str::lower($exception->getMessage());
-
-        return Str::contains($message, [
-            'http 429',
-            'quota exceeded',
-            'rate limit',
-            'billing',
-            'http 401',
-            'http 403',
-            'api key not valid',
-            'permission denied',
-        ]);
+        try {
+            $payload = $this->requestGroq($session, $structures);
+            if ($payload === null || !isset($payload['questions']) || !is_array($payload['questions'])) {
+                return null;
+            }
+            return $this->persistProviderQuestions($session, $structures, $offset, $payload['questions']);
+        } catch (Throwable $e) {
+            Log::warning("Groq error: " . $e->getMessage());
+            return null;
+        }
     }
 
-    private function providerErrorMessage(Throwable $exception): string
+    private function requestGroq(ExamSession $session, Collection $structures): ?array
     {
-        $message = Str::lower($exception->getMessage());
-
-        if (Str::contains($message, ['http 429', 'quota exceeded', 'rate limit'])) {
-            return 'Generate Gemini gagal karena melebihi batas kecepatan (Rate Limit). Silakan tunggu 1 menit atau gunakan billing Pay-as-you-go untuk limit yang lebih tinggi.';
-        }
-
-        if (Str::contains($message, ['billing'])) {
-            return 'Generate Gemini gagal karena billing API habis atau belum diaktifkan. Cek Google Cloud Console.';
-        }
-
-        if (Str::contains($message, ['http 401', 'http 403', 'api key not valid', 'permission denied'])) {
-            return 'Generate Gemini gagal karena API key tidak valid atau tidak punya akses ke model yang dipilih.';
-        }
-
-        return 'Generate Gemini gagal karena provider AI menolak request.';
-    }
-
-    private function candidateGeminiModels(string $configuredModel): array
-    {
-        $normalized = $this->normalizeGeminiModel($configuredModel);
-        $fallbacks = [
-            'gemini-2.5-flash',
-            'gemini-2.0-flash',
-            'gemini-2.5-flash-lite',
-            'gemini-2.0-flash-lite',
-            'gemini-1.5-flash',
-            'gemini-1.5-pro',
+        $apiKey = config('services.ai.groq_key');
+        $model = $session->ai_model ?: config('services.ai.groq_model', 'llama-3.3-70b-versatile');
+        $prompt = $this->buildPrompt($session, $structures);
+        
+        $modelsToTry = [
+            $model,
+            'llama-3.3-70b-versatile',
+            'llama-3.1-70b-versatile',
+            'llama3-70b-8192',
+            'mixtral-8x7b-32768',
+            'gemma2-9b-it',
         ];
-
-        return collect(array_merge([$normalized], $fallbacks))
-            ->filter(fn($value) => is_string($value) && trim($value) !== '')
-            ->map(fn($value) => trim($value))
-            ->unique()
-            ->values()
-            ->all();
-    }
-
-    private function normalizeGeminiModel(string $model): string
-    {
-        $normalized = trim($model);
-
-        if (Str::startsWith($normalized, 'models/')) {
-            $normalized = Str::after($normalized, 'models/');
+        
+        foreach ($modelsToTry as $modelName) {
+            try {
+                $response = Http::timeout(120)
+                    ->withHeaders([
+                        'Authorization' => "Bearer {$apiKey}",
+                        'Content-Type' => 'application/json',
+                    ])
+                    ->when(app()->environment('local'), fn($http) => $http->withoutVerifying())
+                    ->post('https://api.groq.com/openai/v1/chat/completions', [
+                        'model' => $modelName,
+                        'messages' => [['role' => 'user', 'content' => $prompt]],
+                        'temperature' => 0.7,
+                        'max_tokens' => 8192,
+                        'response_format' => ['type' => 'json_object'],
+                    ]);
+                
+                if (!$response->successful()) {
+                    $status = $response->status();
+                    $errorBody = $response->json('error.message') ?? $response->body();
+                    
+                    if ($status === 429 || Str::contains($errorBody, ['quota', 'rate limit', 'rate_limit'])) {
+                        Log::info("Groq {$modelName} rate limit/quota exceeded, trying next model");
+                        continue;
+                    }
+                    
+                    if (in_array($status, [401, 403])) {
+                        Log::warning("Groq auth error, skipping all Groq models");
+                        return null;
+                    }
+                    
+                    if ($status === 404) {
+                        Log::info("Groq model {$modelName} not found, trying next model");
+                        continue;
+                    }
+                    
+                    continue;
+                }
+                
+                $text = $response->json('choices.0.message.content');
+                if (empty($text)) {
+                    continue;
+                }
+                
+                return $this->decodeJson($text);
+                
+            } catch (Throwable $e) {
+                Log::warning("Groq {$modelName} request error: " . $e->getMessage());
+                continue;
+            }
         }
-
-        return $normalized;
+        
+        return null;
     }
 
-    private function buildGeminiPrompt(ExamSession $session, \Illuminate\Support\Collection $structures): string
+    // ================== DEEPSEEK ==================
+    
+    private function generateWithDeepSeek(ExamSession $session, Collection $structures, int $offset): ?int
+    {
+        try {
+            $payload = $this->requestDeepSeek($session, $structures);
+            if ($payload === null || !isset($payload['questions']) || !is_array($payload['questions'])) {
+                return null;
+            }
+            return $this->persistProviderQuestions($session, $structures, $offset, $payload['questions']);
+        } catch (Throwable $e) {
+            Log::warning("DeepSeek error: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    private function requestDeepSeek(ExamSession $session, Collection $structures): ?array
+    {
+        $apiKey = config('services.ai.deepseek_key');
+        $model = $session->ai_model ?: config('services.ai.deepseek_model', 'deepseek-chat');
+        $prompt = $this->buildPrompt($session, $structures);
+        
+        try {
+            $response = Http::timeout(120)
+                ->withHeaders([
+                    'Authorization' => "Bearer {$apiKey}",
+                    'Content-Type' => 'application/json',
+                ])
+                ->when(app()->environment('local'), fn($http) => $http->withoutVerifying())
+                ->post('https://api.deepseek.com/v1/chat/completions', [
+                    'model' => $model,
+                    'messages' => [['role' => 'user', 'content' => $prompt]],
+                    'temperature' => 0.7,
+                    'max_tokens' => 8192,
+                    'response_format' => ['type' => 'json_object'],
+                ]);
+            
+            if (!$response->successful()) {
+                $status = $response->status();
+                $errorBody = $response->json('error.message') ?? $response->body();
+                
+                if ($status === 429 || Str::contains($errorBody, ['quota', 'rate limit'])) {
+                    Log::info("DeepSeek rate limit/quota exceeded");
+                    return null;
+                }
+                
+                if (in_array($status, [401, 403])) {
+                    Log::warning("DeepSeek auth error");
+                    return null;
+                }
+                
+                return null;
+            }
+            
+            $text = $response->json('choices.0.message.content');
+            if (empty($text)) {
+                return null;
+            }
+            
+            return $this->decodeJson($text);
+            
+        } catch (Throwable $e) {
+            Log::warning("DeepSeek request error: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    // ================== OPENAI ==================
+    
+    private function generateWithOpenAI(ExamSession $session, Collection $structures, int $offset): ?int
+    {
+        try {
+            $payload = $this->requestOpenAI($session, $structures);
+            if ($payload === null || !isset($payload['questions']) || !is_array($payload['questions'])) {
+                return null;
+            }
+            return $this->persistProviderQuestions($session, $structures, $offset, $payload['questions']);
+        } catch (Throwable $e) {
+            Log::warning("OpenAI error: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    private function requestOpenAI(ExamSession $session, Collection $structures): ?array
+    {
+        $apiKey = config('services.ai.openai_key');
+        $model = $session->ai_model ?: config('services.ai.openai_model', 'gpt-4o-mini');
+        $prompt = $this->buildPrompt($session, $structures);
+        
+        try {
+            $response = Http::timeout(120)
+                ->withHeaders([
+                    'Authorization' => "Bearer {$apiKey}",
+                    'Content-Type' => 'application/json',
+                ])
+                ->when(app()->environment('local'), fn($http) => $http->withoutVerifying())
+                ->post('https://api.openai.com/v1/chat/completions', [
+                    'model' => $model,
+                    'messages' => [['role' => 'user', 'content' => $prompt]],
+                    'temperature' => 0.7,
+                    'max_tokens' => 8192,
+                    'response_format' => ['type' => 'json_object'],
+                ]);
+            
+            if (!$response->successful()) {
+                $status = $response->status();
+                $errorBody = $response->json('error.message') ?? $response->body();
+                
+                if ($status === 429 || Str::contains($errorBody, ['quota', 'rate limit'])) {
+                    Log::info("OpenAI rate limit/quota exceeded");
+                    return null;
+                }
+                
+                if (in_array($status, [401, 403])) {
+                    Log::warning("OpenAI auth error");
+                    return null;
+                }
+                
+                return null;
+            }
+            
+            $text = $response->json('choices.0.message.content');
+            if (empty($text)) {
+                return null;
+            }
+            
+            return $this->decodeJson($text);
+            
+        } catch (Throwable $e) {
+            Log::warning("OpenAI request error: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    // ================== MISTRAL ==================
+    
+    private function generateWithMistral(ExamSession $session, Collection $structures, int $offset): ?int
+    {
+        try {
+            $payload = $this->requestMistral($session, $structures);
+            if ($payload === null || !isset($payload['questions']) || !is_array($payload['questions'])) {
+                return null;
+            }
+            return $this->persistProviderQuestions($session, $structures, $offset, $payload['questions']);
+        } catch (Throwable $e) {
+            Log::warning("Mistral error: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    private function requestMistral(ExamSession $session, Collection $structures): ?array
+    {
+        $apiKey = config('services.ai.mistral_key');
+        $model = $session->ai_model ?: config('services.ai.mistral_model', 'mistral-large-latest');
+        $prompt = $this->buildPrompt($session, $structures);
+        
+        try {
+            $response = Http::timeout(120)
+                ->withHeaders([
+                    'Authorization' => "Bearer {$apiKey}",
+                    'Content-Type' => 'application/json',
+                ])
+                ->when(app()->environment('local'), fn($http) => $http->withoutVerifying())
+                ->post('https://api.mistral.ai/v1/chat/completions', [
+                    'model' => $model,
+                    'messages' => [['role' => 'user', 'content' => $prompt]],
+                    'temperature' => 0.7,
+                    'max_tokens' => 8192,
+                    'response_format' => ['type' => 'json_object'],
+                ]);
+            
+            if (!$response->successful()) {
+                $status = $response->status();
+                $errorBody = $response->json('message') ?? $response->body();
+                
+                if ($status === 429 || Str::contains($errorBody, ['quota', 'rate limit'])) {
+                    Log::info("Mistral rate limit/quota exceeded");
+                    return null;
+                }
+                
+                if (in_array($status, [401, 403])) {
+                    Log::warning("Mistral auth error");
+                    return null;
+                }
+                
+                return null;
+            }
+            
+            $text = $response->json('choices.0.message.content');
+            if (empty($text)) {
+                return null;
+            }
+            
+            return $this->decodeJson($text);
+            
+        } catch (Throwable $e) {
+            Log::warning("Mistral request error: " . $e->getMessage());
+            return null;
+        }
+    }
+
+    // ================== HELPER METHODS ==================
+
+    private function buildPrompt(ExamSession $session, Collection $structures): string
     {
         $questionType = $structures->first()->question_type;
         $total = $structures->sum('total_questions');
@@ -286,8 +535,7 @@ class AiQuestionService
         $subtopic = $session->subtopic ?? '-';
 
         $visual = collect([
-            'has_question_image' => 'Gambar soal',
-            'has_option_image' => 'Gambar opsi jawaban',
+            'has_question_image' => 'Gambar/Ilustrasi soal',
             'has_diagram' => 'Diagram',
             'has_table' => 'Tabel data',
         ])->filter(fn($label, $key) => $structures->contains($key, true))
@@ -317,23 +565,26 @@ Struktur yang harus dipenuhi:
 Aturan Variasi Media (SANGAT KETAT):
 - Media yang diperbolehkan hanya: {$visual}
 - JANGAN PERNAH memberikan media yang tidak ada di daftar atas.
-- Jika daftar media di atas kosong, buat soal 100% teks.
+- JANGAN sertakan gambar pada opsi jawaban (Opsi hanya boleh teks).
 - Distribusikan secara acak: satu soal maksimal hanya boleh memiliki SATU jenis media dari daftar di atas.
 - Sisakan sekitar 20% soal murni teks tanpa media untuk variasi.
 
-Aturan Format Konten:
-- TABEL: Wajib gunakan format Markdown standar dengan baris pemisah, contoh:
-  | Judul 1 | Judul 2 |
-  | --- | --- |
-  | Data 1 | Data 2 |
-- GAMBAR/DIAGRAM: Karena Anda berbasis teks, berikan deskripsi visual di dalam teks soal dengan format: [GAMBAR: deskripsi detail ilustrasi yang dibutuhkan] atau [DIAGRAM: deskripsi data diagram].
-- MATEMATIKA/SAINS: Untuk notasi matematika, fisika, atau kimia, WAJIB gunakan format LaTeX dengan pembungkus `\$...\$` untuk inline dan `\$\$... \$\$` untuk block. Contoh: `\$E = mc^2\$` atau `\$\$\frac{-b \pm \sqrt{b^2 - 4ac}}{2a}\$\$`.
+Aturan Format Konten (WAJIB DIPATUHI):
+- TABEL: Jika soal memerlukan data terstruktur (seperti data pengamatan, hasil eksperimen, atau perbandingan), WAJIB gunakan format Markdown Table standar.
+  Contoh:
+  | Header 1 | Header 2 |
+  |----------|----------|
+  | Data A   | Data B   |
+  JANGAN gunakan format HTML atau teks biasa.
+- GAMBAR/DIAGRAM: Berikan deskripsi visual dengan format: [GAMBAR: deskripsi detail] atau [DIAGRAM: deskripsi detail].
+- MATEMATIKA/SAINS: WAJIB gunakan format LaTeX dengan pembungkus \$...\$ untuk inline dan \$\$...\$\$ untuk block. Pastikan simbol matematika kompleks berada di dalam blok LaTeX.
+- FORMATTING: Gunakan Markdown standar untuk penebalan (**teks**) atau miring (*teks*).
 
 Kembalikan objek JSON:
 {
   "questions": [
     {
-      "question_text": "... jika butuh tabel/gambar masukkan di sini sesuai format di atas ...",
+      "question_text": "...",
       "question_type": "...",
       "difficulty": "Mudah|Sedang|Sulit",
       "cognitive_level": "...",
@@ -352,248 +603,54 @@ Kembalikan objek JSON:
 }
 
 Aturan:
-- Output harus JSON valid, tanpa markdown.
-- Jumlah questions harus tepat {$total}.
-- difficulty harus tepat mengikuti distribusi.
-- options kosong untuk Essay/Studi Kasus/Isian Singkat.
-- Untuk Benar Salah, opsi hanya Benar dan Salah.
+- Output harus JSON murni, tanpa pembungkus markdown ```json.
+- Jangan berikan penjelasan di luar JSON.
+- Pastikan semua simbol matematika dan tabel ter-render dengan format yang diminta.
 PROMPT;
     }
 
-    private function decodeProviderJson(string $text): array
+    private function decodeJson(string $text): ?array
     {
         $clean = trim($text);
-
-        // 1. Hapus code fence markdown
+        
+        // Remove markdown code fences
         $clean = preg_replace('/^```(?:json)?\s*/i', '', $clean) ?? $clean;
         $clean = preg_replace('/\s*```\s*$/', '', $clean) ?? $clean;
-
-        // 2. Coba decode langsung
+        
+        // Try direct decode
         $decoded = json_decode($clean, true);
         if (is_array($decoded)) {
             return $decoded;
         }
-
-        // 3. Cari blok JSON terbesar di dalam teks (AI kadang menambahkan penjelasan)
+        
+        // Try to extract JSON object
         if (preg_match('/\{[\s\S]*"questions"\s*:\s*\[[\s\S]*\]\s*\}/', $clean, $matches)) {
             $decoded = json_decode($matches[0], true);
             if (is_array($decoded)) {
-                Log::info('JSON extracted from mixed AI response using regex fallback.');
                 return $decoded;
             }
         }
-
-        // 4. Cari dari kurung kurawal pertama sampai terakhir
+        
+        // Try brace matching
         $firstBrace = strpos($clean, '{');
         $lastBrace = strrpos($clean, '}');
         if ($firstBrace !== false && $lastBrace !== false && $lastBrace > $firstBrace) {
             $jsonCandidate = substr($clean, $firstBrace, $lastBrace - $firstBrace + 1);
             $decoded = json_decode($jsonCandidate, true);
             if (is_array($decoded)) {
-                Log::info('JSON extracted using brace-matching fallback.');
                 return $decoded;
             }
         }
-
+        
         Log::warning('Failed to extract JSON from AI response', [
             'length' => strlen($text),
             'preview' => Str::limit($text, 500),
         ]);
-
-        throw new RuntimeException('Provider response is not valid JSON. AI mungkin mengembalikan format yang salah.');
+        
+        return null;
     }
 
-    private function persistProviderQuestions(
-        ExamSession $session,
-        \Illuminate\Support\Collection $structures,
-        int $offset,
-        array $questions
-    ): int {
-        // Siapkan pelacak kuota per struktur soal
-        $registry = $structures->mapWithKeys(fn($s) => [
-            $s->id => [
-                'model' => $s,
-                'targets' => [
-                    'Mudah' => (int) $s->easy_count,
-                    'Sedang' => (int) $s->medium_count,
-                    'Sulit' => (int) $s->hard_count,
-                ],
-                'current' => ['Mudah' => 0, 'Sedang' => 0, 'Sulit' => 0],
-            ],
-        ])->toArray();
-
-        $groupTargets = [
-            'Mudah' => $structures->sum('easy_count'),
-            'Sedang' => $structures->sum('medium_count'),
-            'Sulit' => $structures->sum('hard_count'),
-        ];
-        $groupCurrent = ['Mudah' => 0, 'Sedang' => 0, 'Sulit' => 0];
-
-        $created = 0;
-        foreach ($questions as $item) {
-            if (! is_array($item)) {
-                continue;
-            }
-
-            $difficulty = $this->normalizeDifficulty((string) ($item['difficulty'] ?? ''), $groupTargets, $groupCurrent);
-            if ($difficulty === null) {
-                continue;
-            }
-
-            // Cari struktur mana yang masih butuh tingkat kesulitan ini
-            $targetStructureId = null;
-            foreach ($registry as $id => $data) {
-                if ($data['current'][$difficulty] < $data['targets'][$difficulty]) {
-                    $targetStructureId = $id;
-                    break;
-                }
-            }
-
-            if ($targetStructureId === null) {
-                continue;
-            }
-
-            $registry[$targetStructureId]['current'][$difficulty]++;
-            $groupCurrent[$difficulty]++;
-            $created++;
-
-            $structure = $registry[$targetStructureId]['model'];
-            $sequence = $offset + $created;
-            $cognitive = $this->normalizeCognitiveLevel((string) ($item['cognitive_level'] ?? ''), $structure, $sequence);
-            $answerKey = $this->normalizeAnswerKey($structure, $sequence, (string) ($item['answer_key'] ?? ''));
-
-            $question = Question::create([
-                'exam_session_id' => $session->id,
-                'question_structure_id' => $structure->id,
-                'question_type' => $structure->question_type,
-                'question_text' => (string) ($item['question_text'] ?? $this->questionText($session, $structure, $difficulty, $cognitive, $sequence)),
-                'explanation' => (string) ($item['explanation'] ?? $this->explanationText($session, $difficulty, $cognitive)),
-                'difficulty' => $difficulty,
-                'cognitive_level' => $cognitive,
-                'answer_key' => $answerKey,
-                'sort_order' => $sequence,
-            ]);
-
-            $this->createProviderOptions($question, $structure, $sequence, $item['options'] ?? null);
-            $this->createProviderBlueprint($question, $session, $structure, $cognitive, $item['blueprint'] ?? null);
-        }
-
-        if ($groupCurrent !== $groupTargets) {
-            throw new RuntimeException('Provider output does not satisfy required difficulty distribution for the group.');
-        }
-
-        return $created;
-    }
-
-    private function normalizeDifficulty(string $difficulty, array $targetCounts, array $currentCounts): ?string
-    {
-        $map = [
-            'mudah' => 'Mudah',
-            'easy' => 'Mudah',
-            'sedang' => 'Sedang',
-            'medium' => 'Sedang',
-            'sulit' => 'Sulit',
-            'hard' => 'Sulit',
-        ];
-
-        $normalized = $map[Str::lower(trim($difficulty))] ?? null;
-        if ($normalized === null) {
-            return null;
-        }
-
-        if ($currentCounts[$normalized] >= $targetCounts[$normalized]) {
-            return null;
-        }
-
-        return $normalized;
-    }
-
-    private function normalizeCognitiveLevel(string $cognitiveLevel, QuestionStructure $structure, int $sequence): string
-    {
-        return filled($cognitiveLevel) ? $cognitiveLevel : $this->pickCognitiveLevel($structure, $sequence);
-    }
-
-    private function normalizeAnswerKey(QuestionStructure $structure, int $sequence, string $answerKey): string
-    {
-        if (! filled($answerKey)) {
-            return $this->answerKey($structure, $sequence);
-        }
-
-        if ($structure->question_type === 'Benar Salah') {
-            $normalized = Str::lower(trim($answerKey));
-
-            return $normalized === 'true' || $normalized === 'benar' ? 'Benar' : 'Salah';
-        }
-
-        return trim($answerKey);
-    }
-
-    private function createProviderOptions(Question $question, QuestionStructure $structure, int $sequence, mixed $options): void
-    {
-        if (in_array($structure->question_type, ['Essay', 'Studi Kasus', 'Isian Singkat'], true)) {
-            return;
-        }
-
-        if (! is_array($options)) {
-            $this->createOptions($question, $structure, $sequence);
-
-            return;
-        }
-
-        if ($structure->question_type === 'Benar Salah') {
-            foreach (['Benar', 'Salah'] as $index => $label) {
-                QuestionOption::create([
-                    'question_id' => $question->id,
-                    'option_label' => $label,
-                    'option_text' => $label,
-                    'is_correct' => $question->answer_key === $label,
-                    'sort_order' => $index + 1,
-                ]);
-            }
-
-            return;
-        }
-
-        $labels = array_slice(range('A', 'Z'), 0, max(1, (int) $structure->option_count));
-        foreach ($labels as $index => $label) {
-            $option = $options[$index] ?? [];
-            $optionText = is_array($option) ? (string) ($option['option_text'] ?? '') : '';
-            $optionLabel = is_array($option) ? (string) ($option['option_label'] ?? $label) : $label;
-            $normalizedLabel = strtoupper(trim($optionLabel));
-            $normalizedLabel = in_array($normalizedLabel, $labels, true) ? $normalizedLabel : $label;
-
-            QuestionOption::create([
-                'question_id' => $question->id,
-                'option_label' => $normalizedLabel,
-                'option_text' => $optionText !== '' ? $optionText : "Opsi {$label} untuk soal {$sequence}",
-                'is_correct' => $question->answer_key === $normalizedLabel,
-                'sort_order' => $index + 1,
-            ]);
-        }
-    }
-
-    private function createProviderBlueprint(
-        Question $question,
-        ExamSession $session,
-        QuestionStructure $structure,
-        string $cognitive,
-        mixed $blueprint
-    ): void {
-        if (! is_array($blueprint)) {
-            $this->createBlueprint($question, $session, $structure, $cognitive);
-
-            return;
-        }
-
-        QuestionBlueprint::create([
-            'question_id' => $question->id,
-            'competency' => (string) ($blueprint['competency'] ?? "Menguasai konsep {$session->subject} pada topik {$session->topic}"),
-            'indicator' => (string) ($blueprint['indicator'] ?? "Peserta didik mampu menjawab soal {$structure->question_type} level {$cognitive}"),
-            'material' => (string) ($blueprint['material'] ?? ($session->subtopic ?: $session->topic)),
-            'cognitive_dimension' => (string) ($blueprint['cognitive_dimension'] ?? $cognitive),
-            'question_type' => (string) ($blueprint['question_type'] ?? $structure->question_type),
-        ]);
-    }
+    // ================== LOCAL DRAFT ==================
 
     private function generateForStructureLocal(ExamSession $session, QuestionStructure $structure, int $offset): int
     {
@@ -632,13 +689,11 @@ PROMPT;
     private function pickCognitiveLevel(QuestionStructure $structure, int $sequence): string
     {
         $levels = $structure->cognitive_levels ?: ['C1 Mengingat', 'C2 Memahami', 'C3 Menerapkan'];
-
         return $levels[($sequence - 1) % count($levels)];
     }
 
     private function questionText(ExamSession $session, QuestionStructure $structure, string $difficulty, string $cognitive, int $sequence): string
     {
-        // Ambil daftar media yang diaktifkan
         $availableMedia = collect([
             'has_question_image' => 'sertakan konteks gambar',
             'has_option_image' => 'sertakan gambar pada opsi jawaban',
@@ -648,7 +703,6 @@ PROMPT;
 
         $visualInstruction = '';
         
-        // Randomisasi: 70% peluang mendapatkan media jika ada media yang tersedia
         if ($availableMedia->isNotEmpty() && rand(1, 100) <= 70) {
             $picked = $availableMedia->random();
             $visualInstruction = " Pertimbangkan instruksi visual: {$picked}.";
@@ -669,17 +723,13 @@ PROMPT;
         if (in_array($structure->question_type, ['Essay', 'Studi Kasus'], true)) {
             return 'Rubrik';
         }
-
         if ($structure->question_type === 'Isian Singkat') {
             return 'Jawaban inti';
         }
-
         if ($structure->question_type === 'Benar Salah') {
             return $sequence % 2 === 0 ? 'Benar' : 'Salah';
         }
-
         $labels = range('A', 'Z');
-
         return $labels[($sequence - 1) % max(1, $structure->option_count)];
     }
 
@@ -688,7 +738,6 @@ PROMPT;
         if (in_array($structure->question_type, ['Essay', 'Studi Kasus', 'Isian Singkat'], true)) {
             return;
         }
-
         if ($structure->question_type === 'Benar Salah') {
             foreach (['Benar', 'Salah'] as $index => $label) {
                 QuestionOption::create([
@@ -699,10 +748,8 @@ PROMPT;
                     'sort_order' => $index + 1,
                 ]);
             }
-
             return;
         }
-
         foreach (array_slice(range('A', 'Z'), 0, $structure->option_count) as $index => $label) {
             QuestionOption::create([
                 'question_id' => $question->id,
@@ -723,6 +770,158 @@ PROMPT;
             'material' => $session->subtopic ?: $session->topic,
             'cognitive_dimension' => $cognitive,
             'question_type' => $structure->question_type,
+        ]);
+    }
+
+    // ================== PERSISTENCE ==================
+
+    private function persistProviderQuestions(ExamSession $session, Collection $structures, int $offset, array $questions): int
+    {
+        $registry = $structures->mapWithKeys(fn($s) => [
+            $s->id => [
+                'model' => $s,
+                'targets' => [
+                    'Mudah' => (int) $s->easy_count,
+                    'Sedang' => (int) $s->medium_count,
+                    'Sulit' => (int) $s->hard_count,
+                ],
+                'current' => ['Mudah' => 0, 'Sedang' => 0, 'Sulit' => 0],
+            ],
+        ])->toArray();
+
+        $groupTargets = [
+            'Mudah' => $structures->sum('easy_count'),
+            'Sedang' => $structures->sum('medium_count'),
+            'Sulit' => $structures->sum('hard_count'),
+        ];
+        $groupCurrent = ['Mudah' => 0, 'Sedang' => 0, 'Sulit' => 0];
+
+        $created = 0;
+        foreach ($questions as $item) {
+            if (!is_array($item)) continue;
+
+            $difficulty = $this->normalizeDifficulty((string) ($item['difficulty'] ?? ''), $groupTargets, $groupCurrent);
+            if ($difficulty === null) continue;
+
+            $targetStructureId = null;
+            foreach ($registry as $id => $data) {
+                if ($data['current'][$difficulty] < $data['targets'][$difficulty]) {
+                    $targetStructureId = $id;
+                    break;
+                }
+            }
+            if ($targetStructureId === null) continue;
+
+            $registry[$targetStructureId]['current'][$difficulty]++;
+            $groupCurrent[$difficulty]++;
+            $created++;
+
+            $structure = $registry[$targetStructureId]['model'];
+            $sequence = $offset + $created;
+            $cognitive = $this->normalizeCognitiveLevel((string) ($item['cognitive_level'] ?? ''), $structure, $sequence);
+            $answerKey = $this->normalizeAnswerKey($structure, $sequence, (string) ($item['answer_key'] ?? ''));
+
+            $question = Question::create([
+                'exam_session_id' => $session->id,
+                'question_structure_id' => $structure->id,
+                'question_type' => $structure->question_type,
+                'question_text' => (string) ($item['question_text'] ?? $this->questionText($session, $structure, $difficulty, $cognitive, $sequence)),
+                'explanation' => (string) ($item['explanation'] ?? $this->explanationText($session, $difficulty, $cognitive)),
+                'difficulty' => $difficulty,
+                'cognitive_level' => $cognitive,
+                'answer_key' => $answerKey,
+                'sort_order' => $sequence,
+            ]);
+
+            $this->createProviderOptions($question, $structure, $sequence, $item['options'] ?? null);
+            $this->createProviderBlueprint($question, $session, $structure, $cognitive, $item['blueprint'] ?? null);
+        }
+
+        return $created;
+    }
+
+    private function normalizeDifficulty(string $difficulty, array $targetCounts, array $currentCounts): ?string
+    {
+        $map = [
+            'mudah' => 'Mudah', 'easy' => 'Mudah',
+            'sedang' => 'Sedang', 'medium' => 'Sedang',
+            'sulit' => 'Sulit', 'hard' => 'Sulit',
+        ];
+        $normalized = $map[Str::lower(trim($difficulty))] ?? null;
+        if ($normalized === null || $currentCounts[$normalized] >= $targetCounts[$normalized]) {
+            return null;
+        }
+        return $normalized;
+    }
+
+    private function normalizeCognitiveLevel(string $cognitiveLevel, QuestionStructure $structure, int $sequence): string
+    {
+        return filled($cognitiveLevel) ? $cognitiveLevel : $this->pickCognitiveLevel($structure, $sequence);
+    }
+
+    private function normalizeAnswerKey(QuestionStructure $structure, int $sequence, string $answerKey): string
+    {
+        if (!filled($answerKey)) {
+            return $this->answerKey($structure, $sequence);
+        }
+        if ($structure->question_type === 'Benar Salah') {
+            $normalized = Str::lower(trim($answerKey));
+            return $normalized === 'true' || $normalized === 'benar' ? 'Benar' : 'Salah';
+        }
+        return trim($answerKey);
+    }
+
+    private function createProviderOptions(Question $question, QuestionStructure $structure, int $sequence, mixed $options): void
+    {
+        if (in_array($structure->question_type, ['Essay', 'Studi Kasus', 'Isian Singkat'], true)) {
+            return;
+        }
+        if (!is_array($options)) {
+            $this->createOptions($question, $structure, $sequence);
+            return;
+        }
+        if ($structure->question_type === 'Benar Salah') {
+            foreach (['Benar', 'Salah'] as $index => $label) {
+                QuestionOption::create([
+                    'question_id' => $question->id,
+                    'option_label' => $label,
+                    'option_text' => $label,
+                    'is_correct' => $question->answer_key === $label,
+                    'sort_order' => $index + 1,
+                ]);
+            }
+            return;
+        }
+        $labels = array_slice(range('A', 'Z'), 0, max(1, (int) $structure->option_count));
+        foreach ($labels as $index => $label) {
+            $option = $options[$index] ?? [];
+            $optionText = is_array($option) ? (string) ($option['option_text'] ?? '') : '';
+            $optionLabel = is_array($option) ? (string) ($option['option_label'] ?? $label) : $label;
+            $normalizedLabel = strtoupper(trim($optionLabel));
+            $normalizedLabel = in_array($normalizedLabel, $labels, true) ? $normalizedLabel : $label;
+            QuestionOption::create([
+                'question_id' => $question->id,
+                'option_label' => $normalizedLabel,
+                'option_text' => $optionText !== '' ? $optionText : "Opsi {$label} untuk soal {$sequence}",
+                'is_correct' => $question->answer_key === $normalizedLabel,
+                'sort_order' => $index + 1,
+            ]);
+        }
+    }
+
+    private function createProviderBlueprint(Question $question, ExamSession $session, QuestionStructure $structure, string $cognitive, mixed $blueprint): void
+    {
+        if (!is_array($blueprint)) {
+            $this->createBlueprint($question, $session, $structure, $cognitive);
+            return;
+        }
+        QuestionBlueprint::create([
+            'question_id' => $question->id,
+            'competency' => (string) ($blueprint['competency'] ?? "Menguasai konsep {$session->subject} pada topik {$session->topic}"),
+            'indicator' => (string) ($blueprint['indicator'] ?? "Peserta didik mampu menjawab soal {$structure->question_type} level {$cognitive}"),
+            'material' => (string) ($blueprint['material'] ?? ($session->subtopic ?: $session->topic)),
+            'cognitive_dimension' => (string) ($blueprint['cognitive_dimension'] ?? $cognitive),
+            'question_type' => (string) ($blueprint['question_type'] ?? $structure->question_type),
         ]);
     }
 }

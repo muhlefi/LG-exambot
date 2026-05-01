@@ -78,23 +78,38 @@ class Question extends Model
 
     public function getPdfFormattedTextAttribute()
     {
-        // DomPDF needs simpler HTML and absolute URLs
-        $text = Str::markdown($this->question_text);
+        $text = $this->question_text;
 
-        // Render LaTeX to Images for PDF (DomPDF doesn't support JS)
-        // 1. Block Math $$ ... $$
-        $text = preg_replace_callback('/\$\$(.*?)\$\$/s', function ($matches) {
-            $latex = urlencode(trim($matches[1]));
-            return '<div style="text-align:center; margin:15px 0;"><img src="https://latex.codecogs.com/png.latex?\dpi{150}\bg_white ' . $latex . '" style="max-width:100%;"></div>';
+        // 1. Render LaTeX to Images BEFORE Markdown
+        // Block Math
+        $text = preg_replace_callback('/(?:\$\$(.*?)\$\$|\\\[(.*?)\\\]|\\\\begin\{(?:equation|gather|align)\}(.*?)\\\\end\{(?:equation|gather|align)\})/s', function ($matches) {
+            $latex = trim($matches[1] ?: ($matches[2] ?: ($matches[3] ?? '')));
+            if (empty($latex)) return '';
+            $url = 'https://latex.codecogs.com/png.latex?\dpi{150}\bg_white ' . urlencode($latex);
+            $base64 = $this->imageToBase64($url);
+            return '<div style="text-align:center; margin:15px 0;"><img src="' . $base64 . '" style="max-width:100%;"></div>';
         }, $text);
 
-        // 2. Inline Math $ ... $
-        $text = preg_replace_callback('/\$([^\$]+)\$/', function ($matches) {
-            $latex = urlencode(trim($matches[1]));
-            return '<img src="https://latex.codecogs.com/png.latex?\inline&space;\dpi{150}\bg_white ' . $latex . '" style="vertical-align:middle; margin:0 2px; height:14px;">';
+        // Inline Math
+        $text = preg_replace_callback('/(?:\$([^\$]+)\$|\\\((.*?)\\\))/s', function ($matches) {
+            $latex = trim($matches[1] ?: ($matches[2] ?? ''));
+            if (empty($latex)) return '';
+            $url = 'https://latex.codecogs.com/png.latex?\inline&space;\dpi{150}\bg_white ' . urlencode($latex);
+            $base64 = $this->imageToBase64($url);
+            return '<img src="' . $base64 . '" style="vertical-align:middle; margin:0 2px; height:14px;">';
         }, $text);
 
-        // Render AI Images/Diagrams
+        // 2. Apply Markdown with GFM (Tables)
+        $text = preg_replace('/([^\n])\n\|/', "$1\n\n|", $text);
+        
+        // Use the manual converter to ensure GFM (tables)
+        $converter = new \League\CommonMark\GithubFlavoredMarkdownConverter([
+            'html_input' => 'allow',
+            'allow_unsafe_links' => false,
+        ]);
+        $text = $converter->convert($text)->getContent();
+
+        // 3. Render AI Images/Diagrams
         return preg_replace_callback(
             ['/\[GAMBAR: (.*?)\]/i', '/\[DIAGRAM: (.*?)\]/i'],
             function ($matches) {
@@ -104,14 +119,30 @@ class Question extends Model
                 $baseUrl = "https://image.pollinations.ai/prompt/";
                 $context = $isDiagram ? "detailed educational diagram about " : "clear educational illustration of ";
                 $url = $baseUrl . urlencode($context . $description) . "?width=600&height=400&nologo=true";
+                $base64 = $this->imageToBase64($url);
 
                 return '
                     <div style="margin: 20px 0; border: 1px solid #ddd; border-radius: 10px; padding: 10px; background: #f9f9f9;">
                         <div style="font-size: 9px; font-weight: bold; color: #666; margin-bottom: 5px;">' . ($isDiagram ? "DIAGRAM" : "ILUSTRASI") . ': ' . htmlspecialchars($description) . '</div>
-                        <img src="' . $url . '" style="width: 100%; max-width: 500px; display: block; margin: 0 auto; border-radius: 5px;">
+                        <img src="' . $base64 . '" style="width: 100%; max-width: 500px; display: block; margin: 0 auto; border-radius: 5px;">
                     </div>';
             },
             $text
         );
+    }
+
+    private function imageToBase64($url)
+    {
+        try {
+            $response = \Illuminate\Support\Facades\Http::withoutVerifying()->timeout(15)->get($url);
+            if ($response->successful()) {
+                $type = 'image/png';
+                if (str_contains($url, 'pollinations.ai')) $type = 'image/jpeg';
+                return 'data:' . $type . ';base64,' . base64_encode($response->body());
+            }
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::warning("Failed to fetch image for PDF: " . $url . " - " . $e->getMessage());
+        }
+        return $url; // Fallback to URL
     }
 }

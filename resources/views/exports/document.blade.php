@@ -9,6 +9,13 @@
         .meta td { padding: 3px 0; }
         .question { margin-bottom: 14px; }
         .options { margin-left: 18px; }
+        .options p { display: inline; margin: 0; }
+        
+        /* Table Styles for Markdown Content */
+        table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 11px; }
+        table th, table td { border: 1px solid #ccc; padding: 6px; text-align: left; }
+        table th { background-color: #f3f4f6; font-weight: bold; }
+        
         table.blueprint { width: 100%; border-collapse: collapse; font-size: 10px; }
         table.blueprint th, table.blueprint td { border: 1px solid #444; padding: 5px; vertical-align: top; }
     </style>
@@ -17,7 +24,17 @@
     <table style="width: 100%; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px;">
         <tr>
             <td style="width: 80px; vertical-align: middle;">
-                <img src="{{ public_path('img/logo.png') }}" style="width: 80px; height: 80px;">
+                @php
+                    $logoPath = public_path('img/logo.jpeg');
+                    $logoBase64 = '';
+                    if (file_exists($logoPath)) {
+                        $logoData = base64_encode(file_get_contents($logoPath));
+                        $logoBase64 = 'data:image/jpeg;base64,' . $logoData;
+                    }
+                @endphp
+                @if($logoBase64)
+                    <img src="{{ $logoBase64 }}" style="width: 80px; height: 80px;">
+                @endif
             </td>
             <td style="text-align: center; vertical-align: middle; padding-right: 80px;">
                 <h3 style="margin: 0; font-size: 14px; font-weight: bold; text-transform: uppercase;">BIMBINGAN BELAJAR</h3>

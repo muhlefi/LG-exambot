@@ -36,11 +36,22 @@ return [
     ],
 
     'ai' => [
-        'default_provider' => env('AI_PROVIDER', 'local-draft'),
-        'openai_key' => env('OPENAI_API_KEY'),
-        'openai_model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
-        'gemini_key' => env('GEMINI_API_KEY'),
-        'gemini_model' => env('GEMINI_MODEL', 'gemini-1.5-flash'),
-    ],
+    'default_provider' => env('AI_PROVIDER', 'local-draft'),
+    
+    'gemini_key' => env('GEMINI_API_KEY'),  // ← mapping ke variable Anda
+    'gemini_model' => env('GEMINI_MODEL', 'gemini-2.5-flash'),
+    
+    'openai_key' => env('OPENAI_API_KEY'),
+    'openai_model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
+    
+    'groq_key' => env('GROQ_API_KEY'),  // ← mapping ke variable Anda
+    'groq_model' => env('GROQ_MODEL', 'llama-3.3-70b-versatile'),
+    
+    'deepseek_key' => env('DEEPSEEK_API_KEY'),  // ← mapping ke variable Anda
+    'deepseek_model' => env('DEEPSEEK_MODEL', 'deepseek-chat'),
+    
+    'mistral_key' => env('MISTRAL_API_KEY'),
+    'mistral_model' => env('MISTRAL_MODEL', 'mistral-large-latest'),
+],
 
 ];
