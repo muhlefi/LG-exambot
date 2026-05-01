@@ -34,11 +34,20 @@ class QuestionOption extends Model
     {
         $text = $this->option_text;
 
-        // Render LaTeX to Images for PDF
-        // Inline Math $ ... $ (options usually don't have block math)
+        // Render LaTeX to Images for PDF (Base64 approach)
         return preg_replace_callback('/\$([^\$]+)\$/', function ($matches) {
-            $latex = urlencode(trim($matches[1]));
-            return '<img src="https://latex.codecogs.com/png.latex?\inline&space;\dpi{150}\bg_white ' . $latex . '" style="vertical-align:middle; margin:0 2px; height:12px;">';
+            $latex = rawurlencode(trim($matches[1]));
+            $url = "https://latex.codecogs.com/png.latex?\dpi{150}\bg_white " . $latex;
+            
+            try {
+                $ctx = stream_context_create(['http' => ['timeout' => 3]]);
+                $data = @file_get_contents($url, false, $ctx);
+                if ($data) {
+                    return '<img src="data:image/png;base64,' . base64_encode($data) . '" style="vertical-align:middle; margin:0 2px; height:12px;">';
+                }
+            } catch (\Exception $e) {}
+
+            return '$' . $matches[1] . '$';
         }, $text);
     }
 }

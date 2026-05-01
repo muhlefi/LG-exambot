@@ -1,13 +1,13 @@
 <x-layouts.app title="LG ExamBot">
     <section class="grid items-center gap-10 py-10 lg:grid-cols-[1.1fr_0.9fr]">
         <div class="stagger-in">
-            <p class="mb-5 inline-flex rounded-full border border-fern/20 bg-white/60 px-4 py-2 text-sm font-black uppercase tracking-[0.24em] text-fern">Laravel AI Exam Builder</p>
-            <h1 class="ink-heading text-5xl font-black leading-[0.92] text-ink sm:text-7xl">Buat soal, kisi-kisi, kunci, dan quiz dari satu studio.</h1>
+            <p class="mb-5 inline-flex rounded-full border border-fern/20 bg-white/60 px-4 py-2 text-sm font-black uppercase tracking-[0.24em] text-fern">AI Assessment Studio</p>
+            <h1 class="ink-heading text-5xl font-black leading-[0.92] text-ink sm:text-7xl">Solusi Terpadu untuk Asesmen dan Evaluasi Pembelajaran.</h1>
             <p class="mt-6 max-w-2xl text-lg leading-8 text-ink/70">
-                Platform untuk guru dan institusi pendidikan: builder struktur soal, generator AI, export PDF/DOCX, bank soal, dan mode quiz interaktif.
+                Platform pintar rancangan khusus untuk pendidik dan institusi. Kelola struktur soal, integrasi kecerdasan buatan, ekspor dokumen otomatis, hingga mode ujian interaktif dalam satu ekosistem cerdas.
             </p>
             <div class="mt-8 flex flex-wrap gap-3">
-                <a href="{{ route('register') }}" class="rounded-full bg-fern px-6 py-3 text-sm font-black text-white shadow-xl shadow-fern/20 transition hover:-translate-y-0.5">Mulai Buat Sesi</a>
+                <a href="{{ route('login') }}" class="rounded-full bg-fern px-6 py-3 text-sm font-black text-white shadow-xl shadow-fern/20 transition hover:-translate-y-0.5">Mulai Buat Sesi</a>
             </div>
         </div>
 

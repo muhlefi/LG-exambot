@@ -15,8 +15,8 @@ Route::get('/', function () {
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
     Route::post('/login', [AuthController::class, 'login'])->name('login.store');
-    Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
-    Route::post('/register', [AuthController::class, 'register'])->name('register.store');
+    // Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
+    // Route::post('/register', [AuthController::class, 'register'])->name('register.store');
 });
 
 Route::middleware('auth')->group(function () {
@@ -42,6 +42,7 @@ Route::middleware('auth')->group(function () {
     
     // AI Generation & Results
     Route::post('/sessions/{examSession}/generate', [ExamSessionController::class, 'generate'])->name('sessions.generate');
+    Route::patch('/sessions/{examSession}/model', [ExamSessionController::class, 'updateModel'])->name('sessions.update-model');
     Route::get('/sessions/{examSession}/results', [ExamSessionController::class, 'results'])->name('sessions.results');
     Route::get('/sessions/{examSession}/export/{documentType}/{format}', [ExamSessionController::class, 'export'])->name('sessions.export');
 

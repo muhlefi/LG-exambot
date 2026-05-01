@@ -34,21 +34,63 @@ class AiQuestionService
             $created = 0;
             $provider = (string) config('services.ai.default_provider', 'local-draft');
             $usedProvider = false;
+            $usedProviderName = 'none';
 
             // Group structures by question_type to minimize API requests
             $groups = $session->structures->groupBy('question_type');
 
             foreach ($groups as $questionType => $structures) {
+                $generated = null;
+
+                // Try Gemini first
                 if ($this->shouldUseGemini($provider)) {
                     $generated = $this->generateForGroupWithGemini($session, $structures, $created);
                     if ($generated !== null) {
                         $created += $generated;
                         $usedProvider = true;
+                        $usedProviderName = 'gemini';
 
                         continue;
                     }
                 }
 
+                // Fallback to Groq if Gemini failed
+                if ($this->shouldUseGroq($provider)) {
+                    $generated = $this->generateForGroupWithGroq($session, $structures, $created);
+                    if ($generated !== null) {
+                        $created += $generated;
+                        $usedProvider = true;
+                        $usedProviderName = 'groq';
+
+                        continue;
+                    }
+                }
+
+                // Fallback to OpenAI if Groq failed
+                if ($this->shouldUseOpenAI($provider)) {
+                    $generated = $this->generateForGroupWithOpenAI($session, $structures, $created);
+                    if ($generated !== null) {
+                        $created += $generated;
+                        $usedProvider = true;
+                        $usedProviderName = 'openai';
+
+                        continue;
+                    }
+                }
+
+                // Fallback to DeepSeek if OpenAI failed
+                if ($this->shouldUseDeepSeek($provider)) {
+                    $generated = $this->generateForGroupWithDeepSeek($session, $structures, $created);
+                    if ($generated !== null) {
+                        $created += $generated;
+                        $usedProvider = true;
+                        $usedProviderName = 'deepseek';
+
+                        continue;
+                    }
+                }
+
+                // Final fallback to local-draft
                 foreach ($structures as $structure) {
                     $created += $this->generateForStructureLocal($session, $structure, $created);
                 }
@@ -57,13 +99,13 @@ class AiQuestionService
             AiUsageLog::create([
                 'user_id' => $session->user_id,
                 'exam_session_id' => $session->id,
-                'provider' => $provider,
+                'provider' => $usedProviderName,
                 'tokens_used' => Str::of($this->promptBuilder->build($session))->wordCount(),
                 'status' => 'success',
                 'metadata' => [
                     'mode' => $usedProvider ? 'provider-used' : 'local-draft',
                     'note' => $usedProvider
-                        ? 'Gemini API used with per-structure fallback to local draft.'
+                        ? "{$usedProviderName} API used with per-structure fallback to local draft."
                         : 'Local deterministic generator is used (provider unavailable or response invalid).',
                 ],
             ]);
@@ -77,6 +119,11 @@ class AiQuestionService
     private function shouldUseGemini(string $provider): bool
     {
         return Str::lower(trim($provider)) === 'gemini' && filled(config('services.ai.gemini_key'));
+    }
+
+    private function shouldUseOpenAI(string $provider): bool
+    {
+        return Str::lower(trim($provider)) === 'openai' && filled(config('services.ai.openai_key'));
     }
 
     private function generateForGroupWithGemini(ExamSession $session, \Illuminate\Support\Collection $structures, int $offset): ?int
@@ -105,7 +152,7 @@ class AiQuestionService
 
     private function requestGeminiQuestions(ExamSession $session, \Illuminate\Support\Collection $structures): array
     {
-        $configuredModel = (string) config('services.ai.gemini_model', 'gemini-1.5-flash');
+        $configuredModel = $session->ai_model ?: (string) config('services.ai.gemini_model', 'gemini-1.5-flash');
         $apiKey = (string) config('services.ai.gemini_key');
         $models = $this->candidateGeminiModels($configuredModel);
         $lastError = 'Gemini request failed.';
@@ -128,6 +175,7 @@ class AiQuestionService
                 'generationConfig' => [
                     'responseMimeType' => 'application/json',
                     'temperature' => 0.7,
+                    'maxOutputTokens' => 8192,
                 ],
             ];
 
@@ -236,10 +284,11 @@ class AiQuestionService
     {
         $normalized = $this->normalizeGeminiModel($configuredModel);
         $fallbacks = [
+            'gemini-3-flash',
             'gemini-2.5-flash',
-            'gemini-2.0-flash',
+            'gemini-3.1-flash-lite',
             'gemini-2.5-flash-lite',
-            'gemini-2.0-flash-lite',
+            'gemini-2.0-flash',
             'gemini-1.5-flash',
             'gemini-1.5-pro',
         ];
@@ -724,5 +773,539 @@ PROMPT;
             'cognitive_dimension' => $cognitive,
             'question_type' => $structure->question_type,
         ]);
+    }
+
+    // ================== OpenAI Methods ==================
+
+    private function generateForGroupWithOpenAI(ExamSession $session, \Illuminate\Support\Collection $structures, int $offset): ?int
+    {
+        try {
+            $payload = $this->requestOpenAIQuestions($session, $structures);
+            if (! isset($payload['questions']) || ! is_array($payload['questions'])) {
+                return null;
+            }
+
+            return $this->persistProviderQuestions($session, $structures, $offset, $payload['questions']);
+        } catch (Throwable $exception) {
+            if ($this->shouldAbortProviderFallback($exception)) {
+                throw new AiProviderException($this->openAIErrorMessage($exception), $exception);
+            }
+
+            Log::warning('OpenAI generation failed, falling back to local draft.', [
+                'exam_session_id' => $session->id,
+                'question_structure_ids' => $structures->pluck('id')->all(),
+                'error' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    private function requestOpenAIQuestions(ExamSession $session, \Illuminate\Support\Collection $structures): array
+    {
+        $model = $session->ai_model ?: (string) config('services.ai.openai_model', 'gpt-4o-mini');
+        $apiKey = (string) config('services.ai.openai_key');
+        $prompt = $this->buildGeminiPrompt($session, $structures);
+        $maxRetries = 3;
+
+        $endpoint = 'https://api.openai.com/v1/chat/completions';
+
+        $payload = [
+            'model' => $model,
+            'messages' => [
+                [
+                    'role' => 'user',
+                    'content' => $prompt,
+                ],
+            ],
+            'temperature' => 0.7,
+            'max_tokens' => 8192,
+            'response_format' => ['type' => 'json_object'],
+        ];
+
+        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
+            $request = Http::timeout(150)
+                ->acceptJson()
+                ->withHeaders([
+                    'Content-Type' => 'application/json',
+                    'Authorization' => "Bearer {$apiKey}",
+                ]);
+
+            if (app()->environment('local')) {
+                $request->withoutVerifying();
+            }
+
+            $response = $request->post($endpoint, $payload);
+
+            if (! $response->successful()) {
+                $errorBody = $response->json('error.message') ?? $response->body();
+                $lastError = "[OpenAI|attempt {$attempt}] HTTP {$response->status()}: {$errorBody}";
+
+                Log::info("OpenAI attempt failed", [
+                    'model' => $model,
+                    'attempt' => $attempt,
+                    'status' => $response->status(),
+                    'error' => $errorBody,
+                ]);
+
+                // API Key salah → langsung gagal, jangan retry
+                if (in_array($response->status(), [401, 403])) {
+                    throw new RuntimeException($lastError);
+                }
+
+                // 429 (rate limit) atau 503 → tunggu lalu retry
+                if (in_array($response->status(), [503, 429]) && $attempt < $maxRetries) {
+                    $delay = $response->status() === 429 ? ($attempt * 15) : ($attempt * 5);
+                    Log::info("Retrying OpenAI in {$delay}s (attempt {$attempt}/{$maxRetries})");
+                    sleep($delay);
+                    continue;
+                }
+
+                break;
+            }
+
+            $text = $response->json('choices.0.message.content');
+            if (! is_string($text) || trim($text) === '') {
+                $lastError = '[OpenAI] Response is empty.';
+                break;
+            }
+
+            try {
+                return $this->decodeProviderJson($text);
+            } catch (RuntimeException $e) {
+                $lastError = "[OpenAI] " . $e->getMessage();
+                Log::warning("JSON decode failed for OpenAI, attempt {$attempt}", [
+                    'error' => $e->getMessage(),
+                    'raw_length' => strlen($text),
+                ]);
+
+                if ($attempt < $maxRetries) {
+                    sleep(2);
+                    continue;
+                }
+                break;
+            }
+        }
+
+        throw new RuntimeException($lastError ?? 'OpenAI request failed.');
+    }
+
+    private function openAIErrorMessage(Throwable $exception): string
+    {
+        $message = $exception->getMessage();
+
+        if (Str::contains($message, ['billing', 'exceeded'])) {
+            return 'Generate OpenAI gagal karena batas billing tercapai. Cek OpenAI Platform.';
+        }
+
+        if (Str::contains($message, ['http 401', 'http 403', 'api key not valid', 'invalid api key'])) {
+            return 'Generate OpenAI gagal karena API key tidak valid.';
+        }
+
+        if (Str::contains($message, ['rate limit', '429'])) {
+            return 'Generate OpenAI gagal karena melebihi batas kecepatan (Rate Limit). Silakan tunggu 1 menit.';
+        }
+
+        return 'Generate OpenAI gagal karena provider AI menolak request.';
+    }
+
+    // ================== Groq Methods ==================
+
+    private function shouldUseGroq(string $provider): bool
+    {
+        return Str::lower(trim($provider)) === 'groq' && filled(config('services.ai.groq_key'));
+    }
+
+    private function generateForGroupWithGroq(ExamSession $session, \Illuminate\Support\Collection $structures, int $offset): ?int
+    {
+        try {
+            $payload = $this->requestGroqQuestions($session, $structures);
+            if (! isset($payload['questions']) || ! is_array($payload['questions'])) {
+                return null;
+            }
+
+            return $this->persistProviderQuestions($session, $structures, $offset, $payload['questions']);
+        } catch (Throwable $exception) {
+            if ($this->shouldAbortProviderFallback($exception)) {
+                throw new AiProviderException($this->groqErrorMessage($exception), $exception);
+            }
+
+            Log::warning('Groq generation failed, falling back to local draft.', [
+                'exam_session_id' => $session->id,
+                'question_structure_ids' => $structures->pluck('id')->all(),
+                'error' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    private function requestGroqQuestions(ExamSession $session, \Illuminate\Support\Collection $structures): array
+    {
+        $model = $session->ai_model ?: (string) config('services.ai.groq_model', 'llama-3.3-70b-versatile');
+        $apiKey = (string) config('services.ai.groq_key');
+        $prompt = $this->buildGeminiPrompt($session, $structures);
+        $maxRetries = 3;
+
+        // Groq uses OpenAI-compatible API
+        $endpoint = 'https://api.groq.com/openai/v1/chat/completions';
+
+        $payload = [
+            'model' => $model,
+            'messages' => [
+                [
+                    'role' => 'user',
+                    'content' => $prompt,
+                ],
+            ],
+            'temperature' => 0.7,
+            'max_tokens' => 8192,
+            'response_format' => ['type' => 'json_object'],
+        ];
+
+        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
+            $request = Http::timeout(150)
+                ->acceptJson()
+                ->withHeaders([
+                    'Content-Type' => 'application/json',
+                    'Authorization' => "Bearer {$apiKey}",
+                ]);
+
+            if (app()->environment('local')) {
+                $request->withoutVerifying();
+            }
+
+            $response = $request->post($endpoint, $payload);
+
+            if (! $response->successful()) {
+                $errorBody = $response->json('error.message') ?? $response->body();
+                $lastError = "[Groq|attempt {$attempt}] HTTP {$response->status()}: {$errorBody}";
+
+                Log::info("Groq attempt failed", [
+                    'model' => $model,
+                    'attempt' => $attempt,
+                    'status' => $response->status(),
+                    'error' => $errorBody,
+                ]);
+
+                // API Key salah → langsung gagal, jangan retry
+                if (in_array($response->status(), [401, 403])) {
+                    throw new RuntimeException($lastError);
+                }
+
+                // 429 (rate limit) atau 503 → tunggu lalu retry
+                if (in_array($response->status(), [503, 429]) && $attempt < $maxRetries) {
+                    $delay = $response->status() === 429 ? ($attempt * 15) : ($attempt * 5);
+                    Log::info("Retrying Groq in {$delay}s (attempt {$attempt}/{$maxRetries})");
+                    sleep($delay);
+                    continue;
+                }
+
+                break;
+            }
+
+            $text = $response->json('choices.0.message.content');
+            if (! is_string($text) || trim($text) === '') {
+                $lastError = '[Groq] Response is empty.';
+                break;
+            }
+
+            try {
+                return $this->decodeProviderJson($text);
+            } catch (RuntimeException $e) {
+                $lastError = "[Groq] " . $e->getMessage();
+                Log::warning("JSON decode failed for Groq, attempt {$attempt}", [
+                    'error' => $e->getMessage(),
+                    'raw_length' => strlen($text),
+                ]);
+
+                if ($attempt < $maxRetries) {
+                    sleep(2);
+                    continue;
+                }
+                break;
+            }
+        }
+
+        throw new RuntimeException($lastError ?? 'Groq request failed.');
+    }
+
+    private function groqErrorMessage(Throwable $exception): string
+    {
+        $message = $exception->getMessage();
+
+        if (Str::contains($message, ['rate limit', '429'])) {
+            return 'Generate Groq gagal karena melebihi batas kecepatan (Rate Limit). Silakan tunggu 1 menit.';
+        }
+
+        if (Str::contains($message, ['http 401', 'http 403', 'api key not valid', 'invalid api key'])) {
+            return 'Generate Groq gagal karena API key tidak valid.';
+        }
+
+        return 'Generate Groq gagal karena provider AI menolak request.';
+    }
+
+    // ================== DeepSeek Methods ==================
+    {
+        return Str::lower(trim($provider)) === 'mistral' && filled(config('services.ai.mistral_key'));
+    }
+
+    private function generateForGroupWithMistral(ExamSession $session, \Illuminate\Support\Collection $structures, int $offset): ?int
+    {
+        try {
+            $payload = $this->requestMistralQuestions($session, $structures);
+            if (! isset($payload['questions']) || ! is_array($payload['questions'])) {
+                return null;
+            }
+
+            return $this->persistProviderQuestions($session, $structures, $offset, $payload['questions']);
+        } catch (Throwable $exception) {
+            if ($this->shouldAbortProviderFallback($exception)) {
+                throw new AiProviderException($this->mistralErrorMessage($exception), $exception);
+            }
+
+            Log::warning('Mistral generation failed, falling back to local draft.', [
+                'exam_session_id' => $session->id,
+                'question_structure_ids' => $structures->pluck('id')->all(),
+                'error' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    private function requestMistralQuestions(ExamSession $session, \Illuminate\Support\Collection $structures): array
+    {
+        $model = $session->ai_model ?: (string) config('services.ai.mistral_model', 'mistral-large-latest');
+        $apiKey = (string) config('services.ai.mistral_key');
+        $prompt = $this->buildGeminiPrompt($session, $structures);
+        $maxRetries = 3;
+
+        $endpoint = 'https://api.mistral.ai/v1/chat/completions';
+
+        $payload = [
+            'model' => $model,
+            'messages' => [
+                [
+                    'role' => 'user',
+                    'content' => $prompt,
+                ],
+            ],
+            'temperature' => 0.7,
+            'max_tokens' => 8192,
+            'response_format' => ['type' => 'json_object'],
+        ];
+
+        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
+            $request = Http::timeout(150)
+                ->acceptJson()
+                ->withHeaders([
+                    'Content-Type' => 'application/json',
+                    'Authorization' => "Bearer {$apiKey}",
+                ]);
+
+            if (app()->environment('local')) {
+                $request->withoutVerifying();
+            }
+
+            $response = $request->post($endpoint, $payload);
+
+            if (! $response->successful()) {
+                $errorBody = $response->json('message') ?? $response->body();
+                $lastError = "[Mistral|attempt {$attempt}] HTTP {$response->status()}: {$errorBody}";
+
+                Log::info("Mistral attempt failed", [
+                    'model' => $model,
+                    'attempt' => $attempt,
+                    'status' => $response->status(),
+                    'error' => $errorBody,
+                ]);
+
+                if (in_array($response->status(), [401, 403])) {
+                    throw new RuntimeException($lastError);
+                }
+
+                if (in_array($response->status(), [503, 429]) && $attempt < $maxRetries) {
+                    $delay = $response->status() === 429 ? ($attempt * 15) : ($attempt * 5);
+                    Log::info("Retrying Mistral in {$delay}s (attempt {$attempt}/{$maxRetries})");
+                    sleep($delay);
+                    continue;
+                }
+
+                break;
+            }
+
+            $text = $response->json('choices.0.message.content');
+            if (! is_string($text) || trim($text) === '') {
+                $lastError = '[Mistral] Response is empty.';
+                break;
+            }
+
+            try {
+                return $this->decodeProviderJson($text);
+            } catch (RuntimeException $e) {
+                $lastError = "[Mistral] " . $e->getMessage();
+                Log::warning("JSON decode failed for Mistral, attempt {$attempt}", [
+                    'error' => $e->getMessage(),
+                    'raw_length' => strlen($text),
+                ]);
+
+                if ($attempt < $maxRetries) {
+                    sleep(2);
+                    continue;
+                }
+                break;
+            }
+        }
+
+        throw new RuntimeException($lastError ?? 'Mistral request failed.');
+    }
+
+    private function mistralErrorMessage(Throwable $exception): string
+    {
+        $message = $exception->getMessage();
+
+        if (Str::contains($message, ['rate limit', '429'])) {
+            return 'Generate Mistral gagal karena melebihi batas kecepatan (Rate Limit).';
+        }
+
+        if (Str::contains($message, ['http 401', 'http 403', 'api key not valid'])) {
+            return 'Generate Mistral gagal karena API key tidak valid.';
+        }
+
+        return 'Generate Mistral gagal karena provider AI menolak request.';
+    }
+
+    // ================== DeepSeek Methods ==================
+
+    private function shouldUseDeepSeek(string $provider): bool
+    {
+        return Str::lower(trim($provider)) === 'deepseek' && filled(config('services.ai.deepseek_key'));
+    }
+
+    private function generateForGroupWithDeepSeek(ExamSession $session, \Illuminate\Support\Collection $structures, int $offset): ?int
+    {
+        try {
+            $payload = $this->requestDeepSeekQuestions($session, $structures);
+            if (! isset($payload['questions']) || ! is_array($payload['questions'])) {
+                return null;
+            }
+
+            return $this->persistProviderQuestions($session, $structures, $offset, $payload['questions']);
+        } catch (Throwable $exception) {
+            if ($this->shouldAbortProviderFallback($exception)) {
+                throw new AiProviderException($this->deepSeekErrorMessage($exception), $exception);
+            }
+
+            Log::warning('DeepSeek generation failed, falling back to local draft.', [
+                'exam_session_id' => $session->id,
+                'question_structure_ids' => $structures->pluck('id')->all(),
+                'error' => $exception->getMessage(),
+            ]);
+
+            return null;
+        }
+    }
+
+    private function requestDeepSeekQuestions(ExamSession $session, \Illuminate\Support\Collection $structures): array
+    {
+        $model = $session->ai_model ?: (string) config('services.ai.deepseek_model', 'deepseek-chat');
+        $apiKey = (string) config('services.ai.deepseek_key');
+        $prompt = $this->buildGeminiPrompt($session, $structures);
+        $maxRetries = 3;
+
+        $endpoint = 'https://api.deepseek.com/v1/chat/completions';
+
+        $payload = [
+            'model' => $model,
+            'messages' => [
+                [
+                    'role' => 'user',
+                    'content' => $prompt,
+                ],
+            ],
+            'temperature' => 0.7,
+            'max_tokens' => 8192,
+            'response_format' => ['type' => 'json_object'],
+        ];
+
+        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
+            $request = Http::timeout(150)
+                ->acceptJson()
+                ->withHeaders([
+                    'Content-Type' => 'application/json',
+                    'Authorization' => "Bearer {$apiKey}",
+                ]);
+
+            if (app()->environment('local')) {
+                $request->withoutVerifying();
+            }
+
+            $response = $request->post($endpoint, $payload);
+
+            if (! $response->successful()) {
+                $errorBody = $response->json('error.message') ?? $response->body();
+                $lastError = "[DeepSeek|attempt {$attempt}] HTTP {$response->status()}: {$errorBody}";
+
+                Log::info("DeepSeek attempt failed", [
+                    'model' => $model,
+                    'attempt' => $attempt,
+                    'status' => $response->status(),
+                    'error' => $errorBody,
+                ]);
+
+                if (in_array($response->status(), [401, 403])) {
+                    throw new RuntimeException($lastError);
+                }
+
+                if (in_array($response->status(), [503, 429]) && $attempt < $maxRetries) {
+                    $delay = $response->status() === 429 ? ($attempt * 15) : ($attempt * 5);
+                    Log::info("Retrying DeepSeek in {$delay}s (attempt {$attempt}/{$maxRetries})");
+                    sleep($delay);
+                    continue;
+                }
+
+                break;
+            }
+
+            $text = $response->json('choices.0.message.content');
+            if (! is_string($text) || trim($text) === '') {
+                $lastError = '[DeepSeek] Response is empty.';
+                break;
+            }
+
+            try {
+                return $this->decodeProviderJson($text);
+            } catch (RuntimeException $e) {
+                $lastError = "[DeepSeek] " . $e->getMessage();
+                Log::warning("JSON decode failed for DeepSeek, attempt {$attempt}", [
+                    'error' => $e->getMessage(),
+                    'raw_length' => strlen($text),
+                ]);
+
+                if ($attempt < $maxRetries) {
+                    sleep(2);
+                    continue;
+                }
+                break;
+            }
+        }
+
+        throw new RuntimeException($lastError ?? 'DeepSeek request failed.');
+    }
+
+    private function deepSeekErrorMessage(Throwable $exception): string
+    {
+        $message = $exception->getMessage();
+
+        if (Str::contains($message, ['rate limit', '429'])) {
+            return 'Generate DeepSeek gagal karena melebihi batas kecepatan (Rate Limit).';
+        }
+
+        if (Str::contains($message, ['http 401', 'http 403', 'api key not valid'])) {
+            return 'Generate DeepSeek gagal karena API key tidak valid.';
+        }
+
+        return 'Generate DeepSeek gagal karena provider AI menolak request.';
     }
 }

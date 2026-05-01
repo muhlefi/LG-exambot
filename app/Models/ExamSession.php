@@ -23,6 +23,7 @@ class ExamSession extends Model
         'subject',
         'topic',
         'subtopic',
+        'ai_model',
         'status',
         'metadata',
     ];

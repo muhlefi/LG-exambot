@@ -36,11 +36,15 @@ return [
     ],
 
     'ai' => [
-        'default_provider' => env('AI_PROVIDER', 'local-draft'),
+        'default_provider' => env('AI_PROVIDER', 'gemini'), // Options: gemini, openai, groq, local-draft
         'openai_key' => env('OPENAI_API_KEY'),
         'openai_model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
         'gemini_key' => env('GEMINI_API_KEY'),
-        'gemini_model' => env('GEMINI_MODEL', 'gemini-1.5-flash'),
+        'gemini_model' => env('GEMINI_MODEL', 'gemini-3-flash'),
+        'groq_key' => env('GROQ_API_KEY'),
+        'groq_model' => env('GROQ_MODEL', 'llama-3.3-70b-versatile'),
+        'deepseek_key' => env('DEEPSEEK_API_KEY'),
+        'deepseek_model' => env('DEEPSEEK_MODEL', 'deepseek-chat'),
     ],
 
 ];

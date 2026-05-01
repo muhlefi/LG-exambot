@@ -29,8 +29,9 @@
     </nav>
     <div class="mb-8 flex flex-col justify-between gap-4 xl:flex-row xl:items-end">
         <div>
-            <div class="flex items-center gap-4">
+            <div class="flex flex-wrap items-center gap-4">
                 <p class="text-sm font-black uppercase tracking-[0.24em] text-fern">Builder Struktur Soal</p>
+
                 <a href="{{ route('sessions.edit', $examSession) }}" class="rounded-full border border-ink/10 bg-white p-2 text-ink/40 transition-all hover:text-fern">
                     <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
                 </a>
@@ -62,7 +63,7 @@
             </div>
         </template>
 
-        <section class="paper-panel rounded-[2rem] p-6">
+        <section class="paper-panel rounded-[2rem] p-6 min-w-0">
             <h2 class="ink-heading text-3xl font-black">Tambah Bagian</h2>
             <form method="POST" action="{{ route('sessions.structures.store', $examSession) }}" class="mt-6 space-y-5">
                 @csrf
@@ -148,120 +149,123 @@
             </form>
         </section>
 
-        <section class="paper-panel rounded-[2rem] p-6" x-data="structureSorter">
-            <div class="mb-5 flex items-center justify-between">
-                <h2 class="ink-heading text-3xl font-black">Preview Struktur</h2>
+        <section class="paper-panel rounded-[2rem] p-6 lg:p-8 min-w-0" x-data="structureSorter">
+            <!-- Header Redesign -->
+            <div class="mb-8 flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between flex-wrap border-b border-ink/5 pb-6">
+                <div>
+                    <h2 class="ink-heading text-3xl font-black text-ink">Struktur Naskah</h2>
+                    <p class="mt-1 text-sm font-medium text-ink/50">Urutkan dan sesuaikan komposisi soal sebelum di-generate.</p>
+                </div>
+                
                 <div class="flex items-center gap-4">
-                    <div class="flex flex-col items-end">
-                        <span class="text-[10px] font-black uppercase tracking-widest text-ink/30 leading-none mb-1">Target Total</span>
-                        <span class="rounded-full bg-limewash px-6 py-2 text-sm font-black {{ $examSession->structures->sum('total_questions') > 40 ? 'text-clay border-clay/20' : 'text-fern border-fern/10' }} border shadow-sm">
-                            {{ $examSession->structures->sum('total_questions') }} <span class="opacity-40">/ 40</span> Butir Soal
-                        </span>
+                    <div class="flex items-center gap-3 rounded-full bg-ink/5 p-1.5 pr-4 border border-ink/10">
+                        <div class="flex h-10 min-w-[3rem] items-center justify-center rounded-full bg-white px-4 text-sm font-black shadow-sm {{ $examSession->structures->sum('total_questions') > 40 ? 'text-clay' : 'text-fern' }}">
+                            {{ $examSession->structures->sum('total_questions') }} <span class="opacity-40 ml-1">/ 40</span>
+                        </div>
+                        <span class="text-[10px] font-black uppercase tracking-widest text-ink/50">Total Soal</span>
                     </div>
+
                     <form method="POST" action="{{ route('sessions.generate', $examSession) }}" @submit="generating = true">
                         @csrf
-                        <button @disabled($examSession->structures->isEmpty() || $examSession->structures->sum('total_questions') > 40) class="rounded-full bg-fern px-10 py-4 text-sm font-black text-white shadow-xl shadow-fern/20 transition hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:bg-ink/30 disabled:shadow-none">Generate Naskah</button>
+                        <button @disabled($examSession->structures->isEmpty() || $examSession->structures->sum('total_questions') > 40) class="flex items-center gap-2 rounded-full bg-ink px-8 py-3.5 text-sm font-black text-white shadow-xl shadow-ink/10 transition hover:-translate-y-0.5 active:scale-95 disabled:cursor-not-allowed disabled:bg-ink/30 disabled:shadow-none">
+                            <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                            Generate Naskah AI
+                        </button>
                     </form>
                 </div>
             </div>
 
+            <!-- List Redesign -->
             <div class="space-y-4" x-ref="list">
                 @forelse ($examSession->structures as $structure)
-                    <article class="group relative rounded-[2rem] border border-ink/5 bg-white/40 p-6 transition-all hover:bg-white hover:shadow-xl hover:shadow-ink/5">
-                        <div class="flex items-start justify-between gap-4">
-                            <div class="flex-1">
-                                <div class="flex items-center gap-3">
-                                    <button type="button" class="drag-handle cursor-grab rounded-xl bg-ink/5 p-2.5 text-ink/40 transition hover:bg-fern/10 hover:text-fern">
-                                        <svg class="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M4 8h16M4 16h16"></path></svg>
-                                    </button>
-                                    <div>
-                                        <h3 class="text-xl font-black text-ink leading-tight">{{ $structure->name ?: 'Bagian '.$loop->iteration }}</h3>
-                                        <p class="text-xs font-bold text-ink/30 uppercase tracking-widest mt-1">{{ $structure->question_type }}</p>
-                                    </div>
+                    <article class="group relative flex items-stretch gap-4 rounded-2xl border border-ink/10 bg-white p-5 transition hover:border-ink/20 hover:shadow-lg hover:shadow-ink/5">
+                        
+                        <!-- Drag Handle -->
+                        <div class="flex flex-col items-center justify-center">
+                            <button type="button" class="drag-handle cursor-grab p-2 text-ink/20 transition hover:text-fern">
+                                <svg class="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 8h16M4 16h16"></path></svg>
+                            </button>
+                        </div>
+
+                        <!-- Main Content -->
+                        <div class="flex-1 min-w-0 grid gap-5 2xl:grid-cols-3 2xl:items-center">
+                            <!-- Left: Title & Basic Info -->
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-2">
+                                    <span class="rounded bg-ink/5 px-2 py-0.5 text-[10px] font-black uppercase text-ink/60 whitespace-nowrap">{{ $structure->question_type }}</span>
+                                    @if(in_array($structure->question_type, ['Pilihan Ganda', 'Pilihan Ganda Kompleks', 'HOTS']))
+                                        <span class="text-[10px] font-bold text-ink/40 whitespace-nowrap">{{ $structure->option_count }} Opsi</span>
+                                    @endif
                                 </div>
-
-                                <!-- Metadata Row -->
-                                <div class="mt-6 flex flex-wrap gap-2">
-                                    <div class="flex items-center gap-2 rounded-xl bg-ink/5 px-3 py-1.5 border border-ink/5">
-                                        <span class="text-[10px] font-black uppercase text-ink/30">Total</span>
-                                        <span class="text-xs font-black text-ink/70">{{ $structure->total_questions }} Butir</span>
-                                    </div>
-                                    <div class="flex items-center gap-2 rounded-xl bg-ink/5 px-3 py-1.5 border border-ink/5">
-                                        <span class="text-[10px] font-black uppercase text-ink/30">Opsi</span>
-                                        <span class="text-xs font-black text-ink/70">{{ $structure->option_count }} Pilihan</span>
-                                    </div>
-                                </div>
-
-                                <!-- Difficulty Bar -->
-                                <div class="mt-4 grid grid-cols-3 gap-2">
-                                    <div class="rounded-xl bg-fern/5 p-3 border border-fern/10">
-                                        <p class="text-[9px] font-black uppercase tracking-tighter text-fern/60">Mudah</p>
-                                        <p class="text-lg font-black text-fern leading-none mt-1">{{ $structure->easy_count }}</p>
-                                    </div>
-                                    <div class="rounded-xl bg-honey/5 p-3 border border-honey/10">
-                                        <p class="text-[9px] font-black uppercase tracking-tighter text-honey-dark/60">Sedang</p>
-                                        <p class="text-lg font-black text-honey-dark leading-none mt-1">{{ $structure->medium_count }}</p>
-                                    </div>
-                                    <div class="rounded-xl bg-clay/5 p-3 border border-clay/10">
-                                        <p class="text-[9px] font-black uppercase tracking-tighter text-clay/60">Sulit</p>
-                                        <p class="text-lg font-black text-clay leading-none mt-1">{{ $structure->hard_count }}</p>
-                                    </div>
-                                </div>
-
-                                <!-- Cognitive Levels -->
-                                @if($structure->cognitive_levels)
-                                    <div class="mt-4 flex flex-wrap gap-1.5">
-                                        @foreach($structure->cognitive_levels as $level)
-                                            <span class="rounded-lg bg-white border border-ink/5 px-2 py-1 text-[10px] font-bold text-ink/40">{{ $level }}</span>
-                                        @endforeach
-                                    </div>
-                                @endif
-                            </div>
-
-                            <!-- Media & Quick Actions -->
-                            <div class="flex flex-col items-end gap-3 shrink-0">
-                                <div class="flex flex-col items-end gap-1.5">
-                                    @foreach (['has_question_image' => 'Gambar', 'has_option_image' => 'Opsi gambar', 'has_diagram' => 'Diagram', 'has_table' => 'Tabel'] as $field => $label)
+                                <h3 class="mt-2 text-lg font-black text-ink leading-tight truncate">{{ $structure->name ?: 'Bagian '.$loop->iteration }}</h3>
+                                
+                                <div class="mt-3 flex flex-wrap gap-1.5">
+                                    @foreach (['has_question_image' => 'Gambar', 'has_option_image' => 'Opsi Gambar', 'has_diagram' => 'Diagram', 'has_table' => 'Tabel'] as $field => $label)
                                         @if ($structure->{$field})
-                                            <span class="flex items-center gap-1.5 rounded-full bg-limewash px-3 py-1 text-[9px] font-black uppercase text-fern shadow-sm">
-                                                <span class="h-1 w-1 rounded-full bg-fern"></span>
-                                                {{ $label }}
+                                            <span class="rounded bg-limewash px-2 py-1 text-[9px] font-black uppercase text-fern whitespace-nowrap">
+                                                + {{ $label }}
                                             </span>
                                         @endif
                                     @endforeach
                                 </div>
                             </div>
-                        </div>
 
-                        <!-- Action Footer -->
-                        <div class="mt-8 flex items-center justify-between pt-5 border-t border-ink/5">
-                            <p class="text-[10px] font-bold italic text-ink/20">Ditambahkan {{ $structure->created_at->diffForHumans() }}</p>
-                            <div class="flex items-center gap-3">
-                                <form method="POST" action="{{ route('sessions.structures.duplicate', [$examSession, $structure]) }}">
-                                    @csrf
-                                    <button class="flex items-center gap-2 rounded-xl bg-ink/5 px-4 py-2 text-[11px] font-black text-ink/40 transition hover:bg-fern/10 hover:text-fern">
-                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
-                                        Duplikasi
-                                    </button>
-                                </form>
-                                <form id="deleteStructure{{ $structure->id }}" method="POST" action="{{ route('sessions.structures.destroy', [$examSession, $structure]) }}">
-                                    @csrf
-                                    @method('DELETE')
-                                    <button type="button" onclick="confirmDelete('deleteStructure{{ $structure->id }}', 'Struktur soal ini akan dihapus!')" class="flex items-center gap-2 rounded-xl bg-clay/5 px-4 py-2 text-[11px] font-black text-clay transition hover:bg-clay hover:text-white">
-                                        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                        Hapus
-                                    </button>
-                                </form>
+                            <!-- Middle: Composition (Difficulty & Total) -->
+                            <div class="flex items-center justify-between 2xl:justify-center gap-4 border-y border-ink/5 py-4 2xl:border-y-0 2xl:border-x 2xl:py-0 2xl:px-6">
+                                <div class="text-center">
+                                    <p class="text-[10px] font-bold text-ink/40 uppercase tracking-widest mb-1">Mudah</p>
+                                    <p class="text-xl font-black text-fern">{{ $structure->easy_count }}</p>
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-[10px] font-bold text-ink/40 uppercase tracking-widest mb-1">Sedang</p>
+                                    <p class="text-xl font-black text-honey-dark">{{ $structure->medium_count }}</p>
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-[10px] font-bold text-ink/40 uppercase tracking-widest mb-1">Sulit</p>
+                                    <p class="text-xl font-black text-clay">{{ $structure->hard_count }}</p>
+                                </div>
+                                <div class="w-px h-10 bg-ink/10 hidden 2xl:block mx-2"></div>
+                                <div class="text-center">
+                                    <p class="text-[10px] font-bold text-ink/40 uppercase tracking-widest mb-1">Total</p>
+                                    <p class="text-xl font-black text-ink">{{ $structure->total_questions }}</p>
+                                </div>
+                            </div>
+
+                            <!-- Right: Cognitive Levels & Actions -->
+                            <div class="flex flex-col justify-between h-full min-w-0">
+                                <div class="flex flex-wrap gap-1.5">
+                                    @if($structure->cognitive_levels)
+                                        @foreach($structure->cognitive_levels as $level)
+                                            <span class="rounded-full border border-ink/10 px-2.5 py-0.5 text-[10px] font-bold text-ink/60">{{ $level }}</span>
+                                        @endforeach
+                                    @endif
+                                </div>
+                                
+                                <div class="mt-4 flex items-center justify-end gap-3 opacity-100 xl:opacity-0 transition-opacity group-hover:opacity-100">
+                                    <form method="POST" action="{{ route('sessions.structures.duplicate', [$examSession, $structure]) }}">
+                                        @csrf
+                                        <button class="p-2 text-ink/40 hover:text-fern transition rounded-lg hover:bg-fern/10" title="Duplikasi">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M8 7v8a2 2 0 002 2h6M8 7V5a2 2 0 012-2h4.586a1 1 0 01.707.293l4.414 4.414a1 1 0 01.293.707V15a2 2 0 01-2 2h-2M8 7H6a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2v-2"></path></svg>
+                                        </button>
+                                    </form>
+                                    <form id="deleteStructure{{ $structure->id }}" method="POST" action="{{ route('sessions.structures.destroy', [$examSession, $structure]) }}">
+                                        @csrf
+                                        @method('DELETE')
+                                        <button type="button" onclick="confirmDelete('deleteStructure{{ $structure->id }}', 'Struktur soal ini akan dihapus!')" class="p-2 text-ink/40 hover:text-clay transition rounded-lg hover:bg-clay/10" title="Hapus">
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                        </button>
+                                    </form>
+                                </div>
                             </div>
                         </div>
                     </article>
                 @empty
-                    <div class="flex flex-col items-center justify-center rounded-[2.5rem] border-2 border-dashed border-ink/5 bg-ink/5 p-16 text-center">
-                        <div class="h-16 w-16 rounded-full bg-white flex items-center justify-center text-ink/10 mb-6 shadow-inner">
+                    <div class="flex flex-col items-center justify-center rounded-[2rem] border-2 border-dashed border-ink/10 bg-ink/5 p-12 text-center">
+                        <div class="h-16 w-16 rounded-full bg-white flex items-center justify-center text-ink/20 mb-6 shadow-inner">
                             <svg class="h-8 w-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                         </div>
-                        <h3 class="text-lg font-black text-ink/30">Belum ada struktur</h3>
-                        <p class="mt-2 text-sm text-ink/20 max-w-[200px] mx-auto">Gunakan formulir di atas untuk merancang kerangka soal Anda.</p>
+                        <h3 class="text-lg font-black text-ink">Belum ada struktur</h3>
+                        <p class="mt-2 text-sm text-ink/50 max-w-[240px] mx-auto">Gunakan formulir di atas untuk merancang kerangka soal Anda.</p>
                     </div>
                 @endforelse
             </div>

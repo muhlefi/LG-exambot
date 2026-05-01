@@ -1,14 +1,14 @@
 <x-layouts.app title="Buat Sesi - LG ExamBot">
     <div class="paper-panel rounded-[2rem] p-6">
         <nav class="mb-6 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-ink/30">
-        <a href="{{ route('dashboard') }}" class="hover:text-fern">Dashboard</a>
-        <span>/</span>
-        <a href="{{ route('sessions.index') }}" class="hover:text-fern">Sesi</a>
-        <span>/</span>
-        <span class="text-fern">Buat Sesi</span>
-    </nav>
+            <a href="{{ route('dashboard') }}" class="hover:text-fern">Dashboard</a>
+            <span>/</span>
+            <a href="{{ route('sessions.index') }}" class="hover:text-fern">Sesi</a>
+            <span>/</span>
+            <span class="text-fern">Buat Sesi</span>
+        </nav>
 
-    <div class="mb-8">
+        <div class="mb-8">
             <p class="text-sm font-black uppercase tracking-[0.24em] text-fern">Identitas Penyusun</p>
             <h1 class="ink-heading text-5xl font-black">Buat Sesi Baru</h1>
         </div>

@@ -6,8 +6,8 @@
 @source '../**/*.js';
 
 @theme {
-    --font-sans: 'Aptos', 'Trebuchet MS', sans-serif;
-    --font-serif: 'Fraunces', 'Georgia', serif;
+    --font-sans: 'Inter', 'Aptos', 'Trebuchet MS', sans-serif;
+    --font-serif: 'Merriweather', 'Fraunces', 'Georgia', serif;
     --color-ink: #1e293b;
     --color-fern: #ea580c;
     --color-limewash: #ffedd5;

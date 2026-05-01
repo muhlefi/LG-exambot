@@ -17,7 +17,9 @@
     <table style="width: 100%; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 20px;">
         <tr>
             <td style="width: 80px; vertical-align: middle;">
-                <img src="{{ public_path('img/logo.png') }}" style="width: 80px; height: 80px;">
+                @if(file_exists(public_path('img/logo.png')))
+                    <img src="data:image/png;base64,{{ base64_encode(file_get_contents(public_path('img/logo.png'))) }}" style="width: 80px; height: 80px;">
+                @endif
             </td>
             <td style="text-align: center; vertical-align: middle; padding-right: 80px;">
                 <h3 style="margin: 0; font-size: 14px; font-weight: bold; text-transform: uppercase;">BIMBINGAN BELAJAR</h3>

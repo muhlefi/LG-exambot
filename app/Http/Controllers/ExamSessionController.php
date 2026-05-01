@@ -273,6 +273,19 @@ class ExamSessionController extends Controller
         return back()->with('status', count($ids) . ' soal berhasil dihapus secara massal.');
     }
 
+    public function updateModel(Request $request, ExamSession $examSession)
+    {
+        $this->authorizeOwner($examSession);
+
+        $data = $request->validate([
+            'ai_model' => ['required', 'string', 'max:100'],
+        ]);
+
+        $examSession->update($data);
+
+        return back()->with('status', "Model AI diubah ke {$data['ai_model']}.");
+    }
+
     private function authorizeOwner(ExamSession $examSession): void
     {
         $user = Auth::user();
