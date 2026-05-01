@@ -16,6 +16,7 @@
             <p class="mt-2 text-sm text-ink/60">{{ $examSession->questions->count() }} soal · {{ $examSession->subject }} · {{ $examSession->topic }}</p>
         </div>
         <div class="flex flex-wrap gap-2">
+            <a href="{{ route('sessions.print', $examSession) }}" target="_blank" class="rounded-full bg-ink px-4 py-2 text-xs font-black text-white shadow-lg shadow-ink/20 transition hover:scale-105">Cetak via Browser (Rapi)</a>
             @foreach (['questions' => 'Naskah', 'answers' => 'Kunci', 'blueprint' => 'Kisi-kisi'] as $type => $label)
                 <a href="{{ route('sessions.export', [$examSession, $type, 'pdf']) }}" class="rounded-full bg-fern px-4 py-2 text-xs font-black text-white shadow-lg shadow-fern/20 transition hover:scale-105">{{ $label }} PDF</a>
                 <a href="{{ route('sessions.export', [$examSession, $type, 'docx']) }}" class="rounded-full border border-fern/20 bg-white/70 px-4 py-2 text-xs font-black text-fern transition hover:bg-limewash">{{ $label }} DOCX</a>

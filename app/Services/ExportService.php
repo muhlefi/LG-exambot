@@ -53,7 +53,7 @@ class ExportService
         $path = storage_path('app/exports/'.$this->filename($session, $documentType, 'docx'));
         $phpWord = new PhpWord;
         $section = $phpWord->addSection();
-        $section->addImage(public_path('img/logo.png'), [
+        $section->addImage(public_path('img/logo.jpeg'), [
             'width' => 60,
             'height' => 60,
             'alignment' => \PhpOffice\PhpWord\SimpleType\Jc::CENTER
@@ -76,7 +76,7 @@ class ExportService
             
             if ($question->question_image) {
                 $imagePath = public_path('storage/' . $question->question_image);
-                $questionHtml .= '<div style="text-align: center;"><img src="' . $imagePath . '" style="width: 250px; height: auto;"></div>';
+                $questionHtml .= '<div style="text-align: center;"><img src="' . $imagePath . '" style="width: 250px; height: auto;" /></div>';
             }
 
             \PhpOffice\PhpWord\Shared\Html::addHtml($section, $questionHtml, false, false);

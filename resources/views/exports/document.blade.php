@@ -33,7 +33,7 @@
                     }
                 @endphp
                 @if($logoBase64)
-                    <img src="{{ $logoBase64 }}" style="width: 80px; height: 80px;">
+                    <img src="{{ $logoBase64 }}" style="width: 80px; height: 80px;" />
                 @endif
             </td>
             <td style="text-align: center; vertical-align: middle; padding-right: 80px;">
@@ -96,7 +96,7 @@
                 
                 @if ($question->question_image)
                     <div style="margin: 10px 0; text-align: center;">
-                        <img src="{{ public_path('storage/' . $question->question_image) }}" style="max-width: 100%; max-height: 250px; border: 1px solid #eee;">
+                        <img src="{{ public_path('storage/' . $question->question_image) }}" style="max-width: 100%; max-height: 250px; border: 1px solid #eee;" />
                     </div>
                 @endif
 

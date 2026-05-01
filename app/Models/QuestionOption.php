@@ -40,7 +40,10 @@ class QuestionOption extends Model
             if (empty($latex)) return '';
             $url = 'https://latex.codecogs.com/png.latex?\inline&space;\dpi{150}\bg_white ' . urlencode($latex);
             $base64 = $this->imageToBase64($url);
-            return '<img src="' . $base64 . '" style="vertical-align:middle; margin:0 2px; height:12px;">';
+            if (empty($base64)) {
+                return '<span style="font-family:serif; font-style:italic;">$' . htmlspecialchars($latex) . '$</span>';
+            }
+            return '<img src="' . $base64 . '" style="vertical-align:middle; margin:0 2px; height:12px" />';
         }, $text);
 
         // 2. Render Markdown
@@ -59,7 +62,7 @@ class QuestionOption extends Model
                 $description = trim($matches[1]);
                 $url = "https://image.pollinations.ai/prompt/" . urlencode($description) . "?width=300&height=200&nologo=true";
                 $base64 = $this->imageToBase64($url);
-                return '<img src="' . $base64 . '" style="max-height: 100px; display: block; margin: 5px 0;">';
+                return '<img src="' . $base64 . '" style="max-height: 100px; display: block; margin: 5px 0" />';
             },
             $text
         );
@@ -67,16 +70,28 @@ class QuestionOption extends Model
 
     private function imageToBase64($url)
     {
-        try {
-            $response = \Illuminate\Support\Facades\Http::withoutVerifying()->timeout(15)->get($url);
-            if ($response->successful()) {
-                $type = 'image/png';
-                if (str_contains($url, 'pollinations.ai')) $type = 'image/jpeg';
-                return 'data:' . $type . ';base64,' . base64_encode($response->body());
-            }
-        } catch (\Exception $e) {
-            \Illuminate\Support\Facades\Log::warning("Failed to fetch image for PDF: " . $url . " - " . $e->getMessage());
+        $filename = 'latex_' . md5($url) . '.png';
+        if (str_contains($url, 'pollinations.ai')) $filename = 'ai_' . md5($url) . '.jpg';
+        
+        $storagePath = 'public/latex/' . $filename;
+        $absolutePath = storage_path('app/' . $storagePath);
+
+        if (!file_exists(dirname($absolutePath))) {
+            mkdir(dirname($absolutePath), 0755, true);
         }
-        return $url;
+
+        if (!file_exists($absolutePath)) {
+            try {
+                $response = \Illuminate\Support\Facades\Http::withoutVerifying()->timeout(20)->get($url);
+                if ($response->successful()) {
+                    file_put_contents($absolutePath, $response->body());
+                }
+            } catch (\Exception $e) {
+                \Illuminate\Support\Facades\Log::warning("Failed to download image for Export: " . $url . " - " . $e->getMessage());
+                return ''; 
+            }
+        }
+
+        return file_exists($absolutePath) ? $absolutePath : '';
     }
 }

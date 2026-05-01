@@ -196,6 +196,13 @@ class ExamSessionController extends Controller
         return view('sessions.results', compact('examSession'));
     }
 
+    public function print(ExamSession $examSession)
+    {
+        $this->authorizeOwner($examSession);
+        $examSession->load('questions.options', 'questions.blueprint');
+        return view('sessions.print', compact('examSession'));
+    }
+
     public function export(ExamSession $examSession, string $documentType, string $format, ExportService $exportService)
     {
         $this->authorizeOwner($examSession);
