@@ -7,7 +7,7 @@
                 Platform untuk guru dan institusi pendidikan: builder struktur soal, generator AI, export PDF/DOCX, bank soal, dan mode quiz interaktif.
             </p>
             <div class="mt-8 flex flex-wrap gap-3">
-                <a href="{{ route('register') }}" class="rounded-full bg-fern px-6 py-3 text-sm font-black text-white shadow-xl shadow-fern/20 transition hover:-translate-y-0.5">Mulai Buat Sesi</a>
+                <a href="{{ route('login') }}" class="rounded-full bg-fern px-6 py-3 text-sm font-black text-white shadow-xl shadow-fern/20 transition hover:-translate-y-0.5">Mulai Buat Sesi</a>
             </div>
         </div>
 

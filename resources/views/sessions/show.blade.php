@@ -158,10 +158,6 @@
                             {{ $examSession->structures->sum('total_questions') }} <span class="opacity-40">/ 40</span> Butir Soal
                         </span>
                     </div>
-                    <form method="POST" action="{{ route('sessions.generate', $examSession) }}" @submit="generating = true">
-                        @csrf
-                        <button @disabled($examSession->structures->isEmpty() || $examSession->structures->sum('total_questions') > 40) class="rounded-full bg-fern px-10 py-4 text-sm font-black text-white shadow-xl shadow-fern/20 transition hover:scale-105 active:scale-95 disabled:cursor-not-allowed disabled:bg-ink/30 disabled:shadow-none">Generate Naskah</button>
-                    </form>
                 </div>
             </div>
 

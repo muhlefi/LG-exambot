@@ -8,6 +8,7 @@ use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Ismaelw\LaraTeX\LaraTeX;
 use PhpOffice\PhpWord\IOFactory;
 use PhpOffice\PhpWord\PhpWord;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -34,12 +35,29 @@ class ExportService
             'format' => 'pdf',
         ]);
 
-        return Pdf::loadView('exports.document', [
-            'session' => $session,
-            'documentType' => $documentType,
-        ])->setPaper('a4')
-          ->setOptions(['isRemoteEnabled' => true])
-          ->download($this->filename($session, $documentType, 'pdf'));
+        // Gunakan LaraTeX untuk PDF dengan LaTeX
+        try {
+            $latex = new LaraTeX();
+            
+            // Render template LaTeX dengan data
+            $pdf = $latex->render('exports.latex-document', [
+                'session' => $session,
+                'documentType' => $documentType,
+                'documentTitle' => $this->documentTitle($documentType),
+            ]);
+            
+            return $pdf->download($this->filename($session, $documentType, 'pdf'));
+        } catch (\Exception $e) {
+            // Fallback ke DomPDF jika LaTeX gagal
+            \Log::error('LaraTeX failed: ' . $e->getMessage());
+            
+            return Pdf::loadView('exports.document', [
+                'session' => $session,
+                'documentType' => $documentType,
+            ])->setPaper('a4')
+              ->setOptions(['isRemoteEnabled' => true])
+              ->download($this->filename($session, $documentType, 'pdf'));
+        }
     }
 
     private function downloadDocx(ExamSession $session, string $documentType): BinaryFileResponse
@@ -68,14 +86,15 @@ class ExportService
         $section->addTextBreak();
 
         foreach ($session->questions as $index => $question) {
-            $section->addText(($index + 1).'. '.$question->question_text);
+            // Untuk DOCX, tetap gunakan text biasa (LaTeX tidak support di DOCX)
+            $section->addText(($index + 1).'. '. strip_tags($question->question_text));
             foreach ($question->options as $option) {
                 $section->addText("   {$option->option_label}. {$option->option_text}");
             }
 
             if ($documentType !== 'questions') {
                 $section->addText("Kunci: {$question->answer_key}");
-                $section->addText("Pembahasan: {$question->explanation}");
+                $section->addText("Pembahasan: " . strip_tags($question->explanation));
             }
 
             if ($documentType === 'blueprint' && $question->blueprint) {

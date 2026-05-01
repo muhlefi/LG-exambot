@@ -21,9 +21,9 @@
                 <button class="w-full rounded-2xl bg-fern px-5 py-3 font-black text-white">Login</button>
             </form>
 
-            <p class="mt-6 text-center text-sm text-ink/60">
-                Belum punya akun? <a href="{{ route('register') }}" class="font-black text-fern">Daftar</a>
-            </p>
+            <!-- <p class="mt-6 text-center text-sm text-ink/60">
+                Belum punya akun? <a href="#" class="font-black text-fern">Daftar</a>
+            </p> -->
         </div>
     </div>
 </x-layouts.app>
