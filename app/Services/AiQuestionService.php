@@ -19,7 +19,10 @@ use Throwable;
 
 class AiQuestionService
 {
-    public function __construct(private readonly AiPromptBuilder $promptBuilder) {}
+    public function __construct(
+        private readonly AiPromptBuilder $promptBuilder,
+        private readonly AiImageService $imageService
+    ) {}
 
     public function generate(ExamSession $session): int
     {
@@ -821,11 +824,27 @@ PROMPT;
             $cognitive = $this->normalizeCognitiveLevel((string) ($item['cognitive_level'] ?? ''), $structure, $sequence);
             $answerKey = $this->normalizeAnswerKey($structure, $sequence, (string) ($item['answer_key'] ?? ''));
 
+            // Memproses Generate Gambar secara otomatis saat AI membuat soal
+            $rawText = (string) ($item['question_text'] ?? $this->questionText($session, $structure, $difficulty, $cognitive, $sequence));
+            $questionImage = null;
+
+            if (preg_match('/\[(?:GAMBAR|DIAGRAM):\s*(.*?)\]/i', $rawText, $matches)) {
+                $description = $matches[1];
+                $isDiagram = Str::contains(strtoupper($matches[0]), 'DIAGRAM');
+                
+                // Panggil layanan DALL-E 3 untuk membuat & menyimpan gambar
+                $questionImage = $this->imageService->generateAndSave($description, $isDiagram);
+                
+                // Hapus tag [GAMBAR/DIAGRAM] karena kita sudah punya file gambarnya
+                $rawText = trim(preg_replace('/\[(?:GAMBAR|DIAGRAM):\s*(.*?)\]/i', '', $rawText));
+            }
+
             $question = Question::create([
                 'exam_session_id' => $session->id,
                 'question_structure_id' => $structure->id,
                 'question_type' => $structure->question_type,
-                'question_text' => (string) ($item['question_text'] ?? $this->questionText($session, $structure, $difficulty, $cognitive, $sequence)),
+                'question_text' => $rawText,
+                'question_image' => $questionImage,
                 'explanation' => (string) ($item['explanation'] ?? $this->explanationText($session, $difficulty, $cognitive)),
                 'difficulty' => $difficulty,
                 'cognitive_level' => $cognitive,

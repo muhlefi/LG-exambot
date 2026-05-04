@@ -16,11 +16,14 @@
             <p class="mt-2 text-sm text-ink/60">{{ $examSession->questions->count() }} soal · {{ $examSession->subject }} · {{ $examSession->topic }}</p>
         </div>
         <div class="flex flex-wrap gap-2">
-            <a href="{{ route('sessions.print', $examSession) }}" target="_blank" class="rounded-full bg-ink px-4 py-2 text-xs font-black text-white shadow-lg shadow-ink/20 transition hover:scale-105">Cetak via Browser (Rapi)</a>
-            @foreach (['questions' => 'Naskah', 'answers' => 'Kunci', 'blueprint' => 'Kisi-kisi'] as $type => $label)
-                <a href="{{ route('sessions.export', [$examSession, $type, 'pdf']) }}" class="rounded-full bg-fern px-4 py-2 text-xs font-black text-white shadow-lg shadow-fern/20 transition hover:scale-105">{{ $label }} PDF</a>
-                <a href="{{ route('sessions.export', [$examSession, $type, 'docx']) }}" class="rounded-full border border-fern/20 bg-white/70 px-4 py-2 text-xs font-black text-fern transition hover:bg-limewash">{{ $label }} DOCX</a>
-            @endforeach
+            <a href="{{ route('sessions.print', $examSession) }}" target="_blank" class="rounded-full bg-ink px-4 py-2 text-xs font-black text-white shadow-lg shadow-ink/20 transition hover:scale-105">Cetak Naskah (Browser)</a>
+            
+            <div class="flex gap-1 rounded-full bg-fern/10 p-1">
+                <span class="flex items-center px-3 text-[9px] font-black uppercase text-fern">Export PDF:</span>
+                @foreach(['answers' => 'Kunci', 'blueprint' => 'Kisi-kisi'] as $type => $label)
+                    <a href="{{ route('sessions.export', [$examSession, $type, 'pdf']) }}" class="rounded-full bg-white px-3 py-1 text-[9px] font-black text-fern hover:bg-fern hover:text-white transition-colors">{{ $label }}</a>
+                @endforeach
+            </div>
         </div>
     </div>
 
@@ -59,9 +62,11 @@
     }" x-init="renderMath()" x-effect="tab, renderMath()">
         <section class="paper-panel rounded-[2rem] p-6">
             <div class="mb-6 flex flex-wrap items-center justify-between gap-4">
-                <div class="flex flex-wrap gap-2">
+                <div class="flex flex-wrap gap-2 p-1.5 bg-ink/5 rounded-full border border-ink/5">
                     @foreach (['questions' => 'Naskah Soal', 'answers' => 'Kunci Jawaban', 'blueprint' => 'Kisi-Kisi'] as $key => $label)
-                        <button type="button" @click="tab = '{{ $key }}'" :class="tab === '{{ $key }}' ? 'bg-honey text-ink' : 'bg-white/70 text-ink/60'" class="rounded-full px-4 py-2 text-sm font-black">{{ $label }}</button>
+                        <button type="button" @click="tab = '{{ $key }}'" 
+                            :class="tab === '{{ $key }}' ? 'bg-white text-ink shadow-sm' : 'text-ink/50 hover:text-ink hover:bg-white/40'" 
+                            class="rounded-full px-5 py-2 text-sm font-black transition-all duration-200">{{ $label }}</button>
                     @endforeach
                 </div>
 
@@ -87,7 +92,7 @@
                 </div>
 
                 @forelse ($examSession->questions as $question)
-                    <article class="rounded-[1.5rem] border border-ink/10 bg-white/70 p-5 transition hover:border-fern/30 group">
+                    <article class="stagger-in rounded-[1.5rem] border border-ink/10 bg-white/70 p-5 transition hover:border-fern/30 group" style="animation-delay: {{ $loop->index * 0.1 }}s">
                         <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
                             <div class="flex flex-wrap items-center gap-2">
                                 <input type="checkbox" x-model="selectedQuestions" value="{{ $question->id }}" class="question-checkbox h-4 w-4 rounded border-ink/10 text-fern focus:ring-0">
@@ -134,6 +139,22 @@
                         Belum ada soal. Kembali ke builder lalu klik Generate Naskah Soal.
                     </div>
                 @endforelse
+
+                @if ($examSession->questions->isNotEmpty())
+                    <div class="stagger-in flex flex-col items-center justify-center py-12 text-center" style="animation-delay: {{ $examSession->questions->count() * 0.1 + 0.5 }}s">
+                        <div class="mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-fern/10 text-fern shadow-inner">
+                            <svg class="h-10 w-10 animate-bounce" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
+                            </svg>
+                        </div>
+                        <h3 class="ink-heading text-2xl font-black text-ink">Semua soal siap!</h3>
+                        <p class="mt-2 max-w-xs text-sm text-ink/60 font-bold">Naskah, kunci jawaban, dan kisi-kisi telah berhasil disusun oleh AI.</p>
+                        <div class="mt-6 flex gap-3">
+                            <button @click="tab = 'answers'" class="rounded-full bg-honey/10 px-6 py-2 text-xs font-black text-honey-dark hover:bg-honey hover:text-white transition-colors">Lihat Kunci</button>
+                            <button @click="tab = 'blueprint'" class="rounded-full bg-fern/10 px-6 py-2 text-xs font-black text-fern hover:bg-fern hover:text-white transition-colors">Lihat Kisi-Kisi</button>
+                        </div>
+                    </div>
+                @endif
             </div>
 
             <div x-show="tab === 'answers'" class="space-y-3">

@@ -100,13 +100,6 @@
         {{ $examSession->title }}
     </div>
 
-    <div class="instructions">
-        <strong>Petunjuk Umum:</strong>
-        1. Tulislah nama dan nomor absen pada lembar jawaban yang tersedia.<br>
-        2. Bacalah setiap soal dengan teliti sebelum menjawab.<br>
-        3. Pilihlah satu jawaban yang paling tepat dengan memberi tanda silang (X) pada huruf A, B, C, atau D.
-    </div>
-
     <div class="question-list">
         @foreach($examSession->questions as $index => $question)
             <div class="question-item">
@@ -133,6 +126,59 @@
                 @endif
             </div>
         @endforeach
+    </div>
+
+    <!-- Kunci Jawaban -->
+    <div style="page-break-before: always;">
+        <h2 class="text-center font-bold" style="text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 20px;">Kunci Jawaban & Pembahasan</h2>
+        <table style="width: 100%; border-collapse: collapse; font-size: 10pt;">
+            <thead>
+                <tr style="background: #f0f0f0;">
+                    <th style="border: 1px solid #000; padding: 8px; width: 50px;">No</th>
+                    <th style="border: 1px solid #000; padding: 8px; width: 80px;">Jawaban</th>
+                    <th style="border: 1px solid #000; padding: 8px;">Pembahasan / Penjelasan</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($examSession->questions as $index => $question)
+                    <tr>
+                        <td style="border: 1px solid #000; padding: 8px; text-align: center;">{{ $index + 1 }}</td>
+                        <td style="border: 1px solid #000; padding: 8px; text-align: center; font-weight: bold;">{{ $question->answer_key }}</td>
+                        <td style="border: 1px solid #000; padding: 8px;">{{ $question->explanation }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Kisi-Kisi -->
+    <div style="page-break-before: always;">
+        <h2 class="text-center font-bold" style="text-transform: uppercase; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 20px;">Kisi-Kisi Instrumen Soal</h2>
+        <table style="width: 100%; border-collapse: collapse; font-size: 9pt;">
+            <thead>
+                <tr style="background: #f0f0f0;">
+                    <th style="border: 1px solid #000; padding: 8px; width: 30px;">No</th>
+                    <th style="border: 1px solid #000; padding: 8px;">Kompetensi Dasar / Materi</th>
+                    <th style="border: 1px solid #000; padding: 8px;">Indikator Soal</th>
+                    <th style="border: 1px solid #000; padding: 8px; width: 60px;">Level</th>
+                    <th style="border: 1px solid #000; padding: 8px; width: 80px;">Bentuk</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($examSession->questions as $index => $question)
+                    <tr>
+                        <td style="border: 1px solid #000; padding: 8px; text-align: center;">{{ $index + 1 }}</td>
+                        <td style="border: 1px solid #000; padding: 8px;">
+                            <strong>{{ $question->blueprint?->material }}</strong><br>
+                            <small>{{ $question->blueprint?->competency }}</small>
+                        </td>
+                        <td style="border: 1px solid #000; padding: 8px;">{{ $question->blueprint?->indicator }}</td>
+                        <td style="border: 1px solid #000; padding: 8px; text-align: center;">{{ $question->cognitive_level }}</td>
+                        <td style="border: 1px solid #000; padding: 8px; text-align: center;">{{ $question->question_type }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
     </div>
 
     <script>

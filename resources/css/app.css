@@ -15,6 +15,10 @@
     --color-clay: #ef4444;
 }
 
+html {
+    font-size: 90%;
+}
+
 :root {
     color: var(--color-ink);
     background: #ffffff;

@@ -22,7 +22,7 @@ return new class extends Migration
             $table->string('academic_year');
             $table->string('subject');
             $table->string('topic');
-            $table->string('subtopic')->nullable();
+            $table->text('subtopic')->nullable();
             $table->string('status')->default('draft')->index();
             $table->json('metadata')->nullable();
             $table->timestamps();

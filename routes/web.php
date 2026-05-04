@@ -43,7 +43,7 @@ Route::middleware('auth')->group(function () {
     // AI Generation & Results
     Route::post('/sessions/{examSession}/generate', [ExamSessionController::class, 'generate'])->name('sessions.generate');
     Route::get('/sessions/{examSession}/results', [ExamSessionController::class, 'results'])->name('sessions.results');
-    Route::get('/sessions/{examSession}/print', [ExamSessionController::class, 'print'])->name('sessions.print');
+    Route::get('/sessions/{examSession}/print/{type?}', [ExamSessionController::class, 'print'])->name('sessions.print');
     Route::get('/sessions/{examSession}/export/{documentType}/{format}', [ExamSessionController::class, 'export'])->name('sessions.export');
 
     // Individual Question CRUD

@@ -39,7 +39,7 @@ class ExamSessionController extends Controller
             'academic_year' => ['required', 'string', 'max:100'],
             'subject' => ['required', 'string', 'max:255'],
             'topic' => ['required', 'string', 'max:255'],
-            'subtopic' => ['nullable', 'string', 'max:2000'],
+            'subtopic' => ['nullable', 'string', 'max:10000'],
         ]);
 
         $data['school_name'] = 'BIMBINGAN BELAJAR L-G Learning';
@@ -79,7 +79,7 @@ class ExamSessionController extends Controller
             'academic_year' => ['required', 'string', 'max:100'],
             'subject' => ['required', 'string', 'max:255'],
             'topic' => ['required', 'string', 'max:255'],
-            'subtopic' => ['nullable', 'string', 'max:255'],
+            'subtopic' => ['nullable', 'string', 'max:10000'],
         ]);
 
         $examSession->update($data);
