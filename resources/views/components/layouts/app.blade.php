@@ -51,7 +51,7 @@
         <div x-data="{ sidebarOpen: false }" class="flex h-screen overflow-hidden">
             <!-- Sidebar -->
             <aside 
-                class="fixed inset-y-0 left-0 z-50 w-72 transform bg-white/90 backdrop-blur-xl border-r border-ink/10 transition-transform duration-300 lg:static lg:translate-x-0 flex flex-col"
+                class="fixed inset-y-0 left-0 z-50 w-72 transform bg-white/90 backdrop-blur-xl border-r border-ink/10 transition-transform duration-300 lg:static lg:translate-x-0 flex flex-col slide-in-right"
                 :class="{'translate-x-0': sidebarOpen, '-translate-x-full': !sidebarOpen}"
             >
                 <div class="flex h-20 items-center px-6 border-b border-ink/10">
@@ -121,7 +121,7 @@
 
                 <!-- Scrollable Content -->
                 <main class="flex-1 overflow-y-auto p-6 lg:p-10">
-                    <div class="max-w-7xl mx-auto">
+                    <div class="max-w-7xl mx-auto stagger-in">
                         @if (session('status'))
                             <script>
                                 Swal.fire({
@@ -182,7 +182,7 @@
                 </div>
             </header>
             
-            <main class="flex-1 mx-auto max-w-7xl w-full px-4 py-8 sm:px-6 lg:px-8">
+            <main class="flex-1 mx-auto max-w-7xl w-full px-4 py-8 sm:px-6 lg:px-8 stagger-in">
                 @if (session('status'))
                     <div class="mb-8 rounded-2xl border border-fern/20 bg-limewash px-6 py-4 text-sm font-bold text-fern flex items-center gap-3">
                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>

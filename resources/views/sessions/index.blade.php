@@ -10,7 +10,7 @@
     <div class="paper-panel overflow-hidden rounded-[2rem]">
         <div class="divide-y divide-ink/10">
             @forelse ($sessions as $session)
-                <div class="group grid gap-4 p-6 transition-all hover:bg-white/90 md:grid-cols-[1fr_auto]">
+                <div class="stagger-in group grid gap-4 p-6 transition-all hover:bg-white/90 md:grid-cols-[1fr_auto]" style="animation-delay: {{ $loop->index * 0.05 }}s">
                     <a href="{{ route('sessions.show', $session) }}" class="flex-1">
                         <div class="flex flex-wrap items-center gap-3">
                             <h2 class="text-xl font-black group-hover:text-fern transition-colors">{{ $session->title }}</h2>

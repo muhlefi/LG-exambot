@@ -33,8 +33,9 @@ class AiQuestionService
         }
 
         return DB::transaction(function () use ($session): int {
-            $session->questions()->delete();
-
+            // Kita gunakan sistem append (menambah), bukan menimpa (delete)
+            // Jadi user bisa generate berkali-kali untuk menambah koleksi soal
+            $initialOffset = $session->questions()->count();
             $created = 0;
             $usedProviderName = 'none';
             $usedProvider = false;
@@ -54,7 +55,7 @@ class AiQuestionService
                         'question_type' => $questionType,
                     ]);
 
-                    $generated = $this->tryProvider($providerName, $session, $structures, $created);
+                    $generated = $this->tryProvider($providerName, $session, $structures, $initialOffset + $created);
                     
                     if ($generated !== null && $generated > 0) {
                         $created += $generated;
@@ -77,7 +78,7 @@ class AiQuestionService
                         'exam_session_id' => $session->id,
                     ]);
                     foreach ($structures as $structure) {
-                        $created += $this->generateForStructureLocal($session, $structure, $created);
+                        $created += $this->generateForStructureLocal($session, $structure, $initialOffset + $created);
                     }
                 }
             }
@@ -570,7 +571,8 @@ Aturan Variasi Media (SANGAT KETAT):
 - JANGAN PERNAH memberikan media yang tidak ada di daftar atas.
 - JANGAN sertakan gambar pada opsi jawaban (Opsi hanya boleh teks).
 - Distribusikan secara acak: satu soal maksimal hanya boleh memiliki SATU jenis media dari daftar di atas.
-- Sisakan sekitar 20% soal murni teks tanpa media untuk variasi.
+- Jika opsi media (Gambar/Diagram/Tabel) aktif, WAJIB sertakan media tersebut pada minimal satu soal.
+- Gunakan media secara selektif: targetkan total soal yang memiliki media adalah sekitar 20% (1/5) dari jumlah seluruh soal. Sisanya (80%) harus berupa teks murni tanpa media.
 
 Aturan Format Konten (WAJIB DIPATUHI):
 - TABEL: Jika soal memerlukan data terstruktur (seperti data pengamatan, hasil eksperimen, atau perbandingan), WAJIB gunakan format Markdown Table standar.

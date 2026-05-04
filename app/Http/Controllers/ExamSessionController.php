@@ -55,7 +55,7 @@ class ExamSessionController extends Controller
     {
         $this->authorizeOwner($examSession);
 
-        $examSession->load('structures');
+        $examSession->load('structures')->loadCount('questions');
 
         return view('sessions.show', compact('examSession'));
     }
@@ -196,11 +196,16 @@ class ExamSessionController extends Controller
         return view('sessions.results', compact('examSession'));
     }
 
-    public function print(ExamSession $examSession)
+    public function print(ExamSession $examSession, string $type = 'questions')
     {
         $this->authorizeOwner($examSession);
+        
         $examSession->load('questions.options', 'questions.blueprint');
-        return view('sessions.print', compact('examSession'));
+        
+        return view('sessions.print', [
+            'examSession' => $examSession,
+            'type' => $type
+        ]);
     }
 
     public function export(ExamSession $examSession, string $documentType, string $format, ExportService $exportService)
@@ -278,6 +283,67 @@ class ExamSessionController extends Controller
             ->delete();
 
         return back()->with('status', count($ids) . ' soal berhasil dihapus secara massal.');
+    }
+
+    public function searchBank(Request $request, ExamSession $examSession)
+    {
+        $this->authorizeOwner($examSession);
+        $query = $request->input('q');
+
+        $questions = Question::whereHas('examSession', function ($q) {
+                $q->where('user_id', Auth::id());
+            })
+            ->where('exam_session_id', '!=', $examSession->id)
+            ->when($query, function ($q) use ($query) {
+                $q->where('question_text', 'like', "%{$query}%")
+                  ->orWhereHas('examSession', fn($sq) => $sq->where('subject', 'like', "%{$query}%")->orWhere('topic', 'like', "%{$query}%"));
+            })
+            ->with(['examSession', 'options', 'blueprint'])
+            ->latest()
+            ->limit(20)
+            ->get();
+
+        return response()->json($questions);
+    }
+
+    public function importFromBank(Request $request, ExamSession $examSession)
+    {
+        $this->authorizeOwner($examSession);
+        $ids = $request->validate([
+            'question_ids' => 'required|array',
+            'question_ids.*' => 'exists:questions,id'
+        ]);
+
+        $created = 0;
+        foreach ($ids['question_ids'] as $id) {
+            $sourceQuestion = Question::with(['options', 'blueprint'])->find($id);
+            if (!$sourceQuestion) continue;
+
+            $newQuestion = $sourceQuestion->replicate();
+            $newQuestion->exam_session_id = $examSession->id;
+            // Kita reset structure_id karena ini import kustom
+            $newQuestion->question_structure_id = null;
+            $newQuestion->sort_order = $examSession->questions()->max('sort_order') + 1;
+            $newQuestion->save();
+
+            foreach ($sourceQuestion->options as $option) {
+                $newOption = $option->replicate();
+                $newOption->question_id = $newQuestion->id;
+                $newOption->save();
+            }
+
+            if ($sourceQuestion->blueprint) {
+                $newBlueprint = $sourceQuestion->blueprint->replicate();
+                $newBlueprint->question_id = $newQuestion->id;
+                $newBlueprint->save();
+            }
+
+            $created++;
+        }
+
+        $examSession->update(['status' => 'generated']);
+
+        return back()->with('status', "{$created} soal berhasil diimpor dari bank soal.");
     }
 
     private function authorizeOwner(ExamSession $examSession): void

@@ -16,19 +16,17 @@
             <p class="mt-2 text-sm text-ink/60">{{ $examSession->questions->count() }} soal · {{ $examSession->subject }} · {{ $examSession->topic }}</p>
         </div>
         <div class="flex flex-wrap gap-2">
-            <a href="{{ route('sessions.print', $examSession) }}" target="_blank" class="rounded-full bg-ink px-4 py-2 text-xs font-black text-white shadow-lg shadow-ink/20 transition hover:scale-105">Cetak Naskah (Browser)</a>
-            
-            <div class="flex gap-1 rounded-full bg-fern/10 p-1">
-                <span class="flex items-center px-3 text-[9px] font-black uppercase text-fern">Export PDF:</span>
-                @foreach(['answers' => 'Kunci', 'blueprint' => 'Kisi-kisi'] as $type => $label)
-                    <a href="{{ route('sessions.export', [$examSession, $type, 'pdf']) }}" class="rounded-full bg-white px-3 py-1 text-[9px] font-black text-fern hover:bg-fern hover:text-white transition-colors">{{ $label }}</a>
-                @endforeach
+            <div class="flex gap-1 rounded-full bg-ink/10 p-1">
+                <span class="flex items-center px-3 text-[9px] font-black uppercase text-ink/40">Cetak (Browser):</span>
+                <a href="{{ route('sessions.print', [$examSession, 'questions']) }}" target="_blank" class="rounded-full bg-white px-4 py-2 text-[10px] font-black text-ink shadow-sm hover:bg-fern hover:text-white transition-all">Naskah</a>
+                <a href="{{ route('sessions.print', [$examSession, 'answers']) }}" target="_blank" class="rounded-full bg-white px-4 py-2 text-[10px] font-black text-ink shadow-sm hover:bg-fern hover:text-white transition-all">Kunci</a>
+                <a href="{{ route('sessions.print', [$examSession, 'blueprint']) }}" target="_blank" class="rounded-full bg-white px-4 py-2 text-[10px] font-black text-ink shadow-sm hover:bg-fern hover:text-white transition-all">Kisi-kisi</a>
             </div>
         </div>
     </div>
 
     <style>
-        .prose table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; background: white; border-radius: 1rem; overflow: hidden; }
+        .prose table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; background: white; border-radius: 1rem; overflow: hidden; border: 1px solid #e5e7eb; }
         .prose th, .prose td { border: 1px solid #e5e7eb; padding: 0.75rem 1rem; text-align: left; }
         .prose th { background-color: #f9fafb; font-weight: 800; }
     </style>

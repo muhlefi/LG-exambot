@@ -45,7 +45,15 @@ class Question extends Model
  
     public function getFormattedTextAttribute()
     {
-        $text = Str::markdown($this->question_text);
+        $text = $this->question_text;
+        
+        // Ensure tables have a blank line before them
+        $text = preg_replace('/([^\n])\n\|/', "$1\n\n|", $text);
+
+        $text = Str::of($text)->markdown([
+            'html_input' => 'allow',
+            'allow_unsafe_links' => false,
+        ])->replace('<table>', '<table class="markdown-table">');
  
         return preg_replace_callback(
             ['/\[GAMBAR: (.*?)\]/i', '/\[DIAGRAM: (.*?)\]/i'],

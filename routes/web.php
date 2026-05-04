@@ -51,6 +51,8 @@ Route::middleware('auth')->group(function () {
     Route::put('/questions/{question}', [ExamSessionController::class, 'updateQuestion'])->name('questions.update');
     Route::delete('/questions/{question}', [ExamSessionController::class, 'destroyQuestion'])->name('questions.destroy');
     Route::delete('/sessions/{examSession}/questions/batch', [ExamSessionController::class, 'batchDestroyQuestions'])->name('sessions.questions.batch-destroy');
+    Route::get('/sessions/{examSession}/bank/search', [ExamSessionController::class, 'searchBank'])->name('sessions.bank.search');
+    Route::post('/sessions/{examSession}/bank/import', [ExamSessionController::class, 'importFromBank'])->name('sessions.bank.import');
 
     // Quizzes / Presentation Mode
     Route::get('/quizzes', [QuizController::class, 'index'])->name('quizzes.index');
