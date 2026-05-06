@@ -50,10 +50,12 @@ class Question extends Model
         // Ensure tables have a blank line before them
         $text = preg_replace('/([^\n])\n\|/', "$1\n\n|", $text);
 
-        $text = Str::of($text)->markdown([
+        $converter = new \League\CommonMark\GithubFlavoredMarkdownConverter([
             'html_input' => 'allow',
             'allow_unsafe_links' => false,
-        ])->replace('<table>', '<table class="markdown-table">');
+        ]);
+        $text = $converter->convert($text)->getContent();
+        $text = str_replace('<table>', '<table class="markdown-table">', $text);
  
         return preg_replace_callback(
             ['/\[GAMBAR: (.*?)\]/i', '/\[DIAGRAM: (.*?)\]/i'],

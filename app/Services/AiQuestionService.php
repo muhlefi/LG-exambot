@@ -575,15 +575,19 @@ Aturan Variasi Media (SANGAT KETAT):
 - Gunakan media secara selektif: targetkan total soal yang memiliki media adalah sekitar 20% (1/5) dari jumlah seluruh soal. Sisanya (80%) harus berupa teks murni tanpa media.
 
 Aturan Format Konten (WAJIB DIPATUHI):
-- TABEL: Jika soal memerlukan data terstruktur (seperti data pengamatan, hasil eksperimen, atau perbandingan), WAJIB gunakan format Markdown Table standar.
+- TABEL: Jika soal memerlukan data terstruktur (seperti data pengamatan, hasil eksperimen, atau perbandingan), WAJIB gunakan format Markdown Table standar GFM.
   Contoh:
   | Header 1 | Header 2 |
   |----------|----------|
   | Data A   | Data B   |
-  JANGAN gunakan format HTML atau teks biasa.
+  JANGAN gunakan format HTML atau teks biasa. Pastikan ada baris kosong sebelum dan sesudah tabel.
 - GAMBAR/DIAGRAM: Berikan deskripsi visual dengan format: [GAMBAR: deskripsi detail] atau [DIAGRAM: deskripsi detail].
 - MATEMATIKA/SAINS: WAJIB gunakan format LaTeX dengan pembungkus \$...\$ untuk inline dan \$\$...\$\$ untuk block. Pastikan simbol matematika kompleks berada di dalam blok LaTeX.
 - FORMATTING: Gunakan Markdown standar untuk penebalan (**teks**) atau miring (*teks*).
+- ANTI-DUPLIKASI: 
+  1. JANGAN sertakan pilihan jawaban atau instruksi seperti "(Benar/Salah)" atau "(A/B/C/D)" di dalam `question_text`.
+  2. JANGAN membuat soal yang sama atau sangat mirip dalam satu paket.
+  3. Pastikan kunci jawaban sinkron dengan opsi yang diberikan.
 
 Kembalikan objek JSON:
 {
@@ -744,12 +748,13 @@ PROMPT;
             return;
         }
         if ($structure->question_type === 'Benar Salah') {
-            foreach (['Benar', 'Salah'] as $index => $label) {
+            foreach (['Benar', 'Salah'] as $index => $text) {
+                $label = $index === 0 ? 'A' : 'B';
                 QuestionOption::create([
                     'question_id' => $question->id,
                     'option_label' => $label,
-                    'option_text' => $label,
-                    'is_correct' => $question->answer_key === $label,
+                    'option_text' => $text,
+                    'is_correct' => $question->answer_key === $text,
                     'sort_order' => $index + 1,
                 ]);
             }
@@ -902,12 +907,13 @@ PROMPT;
             return;
         }
         if ($structure->question_type === 'Benar Salah') {
-            foreach (['Benar', 'Salah'] as $index => $label) {
+            foreach (['Benar', 'Salah'] as $index => $text) {
+                $label = $index === 0 ? 'A' : 'B';
                 QuestionOption::create([
                     'question_id' => $question->id,
                     'option_label' => $label,
-                    'option_text' => $label,
-                    'is_correct' => $question->answer_key === $label,
+                    'option_text' => $text,
+                    'is_correct' => $question->answer_key === $text,
                     'sort_order' => $index + 1,
                 ]);
             }

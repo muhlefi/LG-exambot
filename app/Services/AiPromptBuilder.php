@@ -47,7 +47,11 @@ class AiPromptBuilder
         Keluarkan JSON berisi questions[]. Setiap item wajib punya:
         question_text, question_type, difficulty, cognitive_level, options[], answer_key, explanation, blueprint.
         Blueprint wajib berisi competency, indicator, material, cognitive_dimension, question_type.
-        Hindari jawaban ambigu, duplikasi, dan soal di luar materi.
+
+        Aturan Penting:
+        1. ANTI-DUPLIKASI: JANGAN sertakan pilihan jawaban atau instruksi seperti "(Benar/Salah)" di dalam `question_text`.
+        2. TABEL: Gunakan format Markdown Table GFM untuk data terstruktur.
+        3. Hindari jawaban ambigu dan duplikasi soal.
         PROMPT;
     }
 }

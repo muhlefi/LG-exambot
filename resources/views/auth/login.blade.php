@@ -2,7 +2,7 @@
     <div class="mx-auto max-w-md">
         <div class="paper-panel rounded-[2rem] p-8">
             <h1 class="ink-heading text-4xl font-black">Masuk</h1>
-            <p class="mt-2 text-sm text-ink/60">Gunakan akun guru/admin untuk mengelola sesi soal.</p>
+            <p class="mt-2 text-sm text-ink/60">Gunakan akun anda untuk masuk.</p>
 
             <form method="POST" action="{{ route('login.store') }}" class="mt-8 space-y-5">
                 @csrf
