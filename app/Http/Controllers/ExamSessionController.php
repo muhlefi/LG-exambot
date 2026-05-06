@@ -237,16 +237,34 @@ class ExamSessionController extends Controller
             'question_text' => 'required|string',
             'answer_key' => 'required|string',
             'explanation' => 'nullable|string',
+            'image' => 'nullable|image|max:3072',
+            'remove_image' => 'nullable|boolean',
             'options' => 'nullable|array',
             'options.*.id' => 'required|exists:question_options,id',
             'options.*.text' => 'required|string',
         ]);
 
-        $question->update([
+        $updateData = [
             'question_text' => $data['question_text'],
             'answer_key' => $data['answer_key'],
             'explanation' => $data['explanation'],
-        ]);
+        ];
+
+        if ($request->boolean('remove_image')) {
+            if ($question->question_image) {
+                \Illuminate\Support\Facades\Storage::delete($question->question_image);
+                $updateData['question_image'] = null;
+            }
+        }
+
+        if ($request->hasFile('image')) {
+            if ($question->question_image) {
+                \Illuminate\Support\Facades\Storage::delete($question->question_image);
+            }
+            $updateData['question_image'] = $request->file('image')->store('questions', 'public');
+        }
+
+        $question->update($updateData);
 
         if (!empty($data['options'])) {
             foreach ($data['options'] as $optionData) {

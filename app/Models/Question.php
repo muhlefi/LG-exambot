@@ -23,6 +23,15 @@ class Question extends Model
         'sort_order',
     ];
 
+    protected static function booted()
+    {
+        static::deleting(function ($question) {
+            if ($question->question_image) {
+                \Illuminate\Support\Facades\Storage::delete($question->question_image);
+            }
+        });
+    }
+
     public function examSession()
     {
         return $this->belongsTo(ExamSession::class);

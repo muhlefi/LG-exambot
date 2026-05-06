@@ -28,7 +28,7 @@
             <label class="block">
                 <span class="text-sm font-black">Jenjang Pendidikan</span>
                 <select name="education_level" required class="mt-2 w-full rounded-2xl border border-ink/10 bg-white px-4 py-3 outline-none focus:border-fern">
-                    @foreach (['SD','SMP','SMA','UMUM'] as $level)
+                    @foreach (['SD','SMP','SMA'] as $level)
                         <option value="{{ $level }}" @selected(old('education_level') === $level)>{{ $level }}</option>
                     @endforeach
                 </select>
@@ -40,11 +40,24 @@
             </label>
             <label class="block">
                 <span class="text-sm font-black">Semester</span>
-                <input name="semester" value="{{ old('semester') }}" required class="mt-2 w-full rounded-2xl border border-ink/10 bg-white px-4 py-3 outline-none focus:border-fern" placeholder="Ganjil / Genap">
+                <select name="semester" required class="mt-2 w-full rounded-2xl border border-ink/10 bg-white px-4 py-3 outline-none focus:border-fern">
+                    @foreach (['Ganjil', 'Genap'] as $sem)
+                        <option value="{{ $sem }}" @selected(old('semester') === $sem)>{{ $sem }}</option>
+                    @endforeach
+                </select>
             </label>
             <label class="block">
                 <span class="text-sm font-black">Tahun Ajaran</span>
-                <input name="academic_year" value="{{ old('academic_year', '2025/2026') }}" required class="mt-2 w-full rounded-2xl border border-ink/10 bg-white px-4 py-3 outline-none focus:border-fern">
+                <select name="academic_year" required class="mt-2 w-full rounded-2xl border border-ink/10 bg-white px-4 py-3 outline-none focus:border-fern">
+                    @php
+                        $currentYear = date('Y');
+                        $startYear = $currentYear - 2;
+                    @endphp
+                    @for ($i = 0; $i < 6; $i++)
+                        @php $year = ($startYear + $i) . '/' . ($startYear + $i + 1); @endphp
+                        <option value="{{ $year }}" @selected(old('academic_year', '2024/2025') === $year)>{{ $year }}</option>
+                    @endfor
+                </select>
             </label>
             <label class="block">
                 <span class="text-sm font-black">Mata Pelajaran</span>

@@ -19,19 +19,16 @@ class AiImageService
     public function generateAndSave(string $prompt, bool $isDiagram = false): ?string
     {
         // Menggunakan Hugging Face Inference API (Gratis, tapi butuh API Key/Token)
-        // Token bisa didapat gratis di: huggingface.co/settings/tokens
         $apiKey = env('HUGGINGFACE_API_KEY');
         
         if (empty($apiKey)) {
-            Log::warning('HUGGINGFACE_API_KEY is missing. Silakan isi di .env');
-            return null;
+            throw new \App\Exceptions\ImageGenerationException('HUGGINGFACE_API_KEY is missing. Silakan isi di .env');
         }
 
         $style = "professional educational style, clear lines, high resolution, minimalist white background, flat vector illustration.";
         $context = $isDiagram ? "detailed schematic educational diagram of " : "clear educational illustration of ";
         $fullPrompt = $context . $prompt . ", " . $style;
 
-        // Model FLUX.1 sangat pintar memahami teks dan konteks (setara Midjourney/DALL-E)
         $model = 'black-forest-labs/FLUX.1-schnell';
         $url = "https://api-inference.huggingface.co/models/{$model}";
 
@@ -44,15 +41,13 @@ class AiImageService
                 ]);
 
             if (!$response->successful()) {
-                Log::error('Hugging Face Image Generation failed: ' . $response->body());
-                return null;
+                throw new \App\Exceptions\ImageGenerationException('API Hugging Face Gagal: ' . ($response->json('error') ?? $response->body()));
             }
 
-            // Hugging Face mengembalikan file raw binary gambar (JPEG/PNG) langsung
             $imageContent = $response->body();
             
             if (empty($imageContent)) {
-                return null;
+                throw new \App\Exceptions\ImageGenerationException('API mengembalikan konten kosong.');
             }
 
             // Simpan ke storage lokal
@@ -62,8 +57,10 @@ class AiImageService
             return $filename;
             
         } catch (\Throwable $e) {
-            Log::error('AiImageService Error: ' . $e->getMessage());
-            return null;
+            if ($e instanceof \App\Exceptions\ImageGenerationException) {
+                throw $e;
+            }
+            throw new \App\Exceptions\ImageGenerationException('Terjadi kesalahan saat memproses gambar: ' . $e->getMessage(), $e);
         }
     }
 }

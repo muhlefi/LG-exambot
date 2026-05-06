@@ -20,7 +20,7 @@
     </div>
 
     <div class="paper-panel rounded-[2.5rem] p-8">
-        <form method="POST" action="{{ route('questions.update', $question) }}" class="space-y-6">
+        <form method="POST" action="{{ route('questions.update', $question) }}" class="space-y-6" enctype="multipart/form-data">
             @csrf
             @method('PUT')
 
@@ -30,6 +30,34 @@
                         <span class="text-sm font-black">Teks Soal</span>
                         <textarea name="question_text" rows="8" required class="mt-2 w-full rounded-xl border border-ink/10 bg-white px-5 py-4 outline-none focus:border-fern leading-7">{{ old('question_text', $question->question_text) }}</textarea>
                     </label>
+
+                    <div class="rounded-xl border border-ink/10 bg-limewash/30 p-5" x-data="{ 
+                        previewUrl: '{{ $question->question_image ? Storage::url($question->question_image) : '' }}',
+                        handleFileChange(event) {
+                            const file = event.target.files[0];
+                            if (file) {
+                                this.previewUrl = URL.createObjectURL(file);
+                            }
+                        }
+                    }">
+                        <span class="text-sm font-black block mb-3">🖼️ Gambar / Ilustrasi Manual (Opsional)</span>
+                        
+                        <div class="mb-4 relative group w-fit" x-show="previewUrl">
+                            <img :src="previewUrl" class="h-40 w-auto rounded-xl shadow-md border-2 border-white object-cover">
+                            @if($question->question_image)
+                                <label class="mt-2 flex items-center gap-2 text-xs font-bold text-clay cursor-pointer">
+                                    <input type="checkbox" name="remove_image" value="1" class="rounded border-ink/10">
+                                    Hapus Gambar Saat Ini
+                                </label>
+                            @endif
+                        </div>
+
+                        <input type="file" name="image" accept="image/*" @change="handleFileChange" class="w-full text-xs text-ink/50 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-black file:bg-fern file:text-white hover:file:bg-fern-dark cursor-pointer">
+                        <div class="mt-2 flex flex-col gap-1">
+                            <p class="text-[10px] font-bold text-ink/40">* Batas maksimal 3MB.</p>
+                            <p class="text-[10px] font-bold text-ink/40">* Jika Anda mengunggah gambar di sini, gambar ini akan diutamakan daripada tag [GAMBAR: ...] otomatis.</p>
+                        </div>
+                    </div>
 
                     <div class="grid gap-4 sm:grid-cols-2">
                         <label class="block">
