@@ -1,10 +1,13 @@
 <x-layouts.app title="{{ $examSession->title }} - Builder">
     <div x-data="{ 
         generating: false, 
+        progressMessage: 'Memulai proses...',
         isEditModalOpen: false,
         questionType: 'Pilihan Ganda',
         cognitiveLevels: ['C1 Mengingat', 'C2 Memahami', 'C3 Menerapkan'],
         
+        structures: @json($examSession->structures->map(fn($s) => ['id' => $s->id, 'name' => $s->name ?: 'Bagian Soal'])),
+
         isChoice() { 
             return ['Pilihan Ganda', 'Pilihan Ganda Kompleks', 'HOTS'].includes(this.questionType) 
         },
@@ -75,31 +78,36 @@
                 @submit.prevent="confirmAndDo(async () => { 
                     generating = true; 
                     try {
-                        const response = await fetch($el.action, {
-                            method: 'POST',
-                            headers: {
-                                'X-CSRF-TOKEN': '{{ csrf_token() }}',
-                                'Accept': 'application/json',
-                                'X-Requested-With': 'XMLHttpRequest'
-                            }
-                        });
-                        const data = await response.json();
-                        if (data.success) {
-                            window.location.href = data.redirect;
-                        } else {
-                            generating = false;
-                            Swal.fire({
-                                title: 'Gagal',
-                                text: data.message || 'Terjadi kesalahan saat generate soal.',
-                                icon: 'error',
-                                confirmButtonColor: '#1e293b'
+                        let totalCreated = 0;
+                        for (let i = 0; i < structures.length; i++) {
+                            const structure = structures[i];
+                            progressMessage = `Menyusun ${structure.name} (${i + 1}/${structures.length})...`;
+                            
+                            const stepUrl = `{{ url('/sessions/'.$examSession->id.'/generate-step') }}/${structure.id}`;
+                            const response = await fetch(stepUrl, {
+                                method: 'POST',
+                                headers: {
+                                    'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                                    'Accept': 'application/json',
+                                    'X-Requested-With': 'XMLHttpRequest'
+                                }
                             });
+                            
+                            const data = await response.json();
+                            if (!data.success) {
+                                throw new Error(data.message || 'Gagal generate bagian ini');
+                            }
+                            totalCreated += data.created;
                         }
+
+                        // Finalize
+                        progressMessage = 'Menyelesaikan naskah...';
+                        window.location.href = `{{ route('sessions.results', $examSession) }}`;
                     } catch (e) {
                         generating = false;
                         Swal.fire({
-                            title: 'Error',
-                            text: 'Koneksi terputus atau server timeout. Silakan coba lagi.',
+                            title: 'Gagal',
+                            text: e.message || 'Terjadi kesalahan sistem.',
                             icon: 'error',
                             confirmButtonColor: '#1e293b'
                         });
@@ -122,7 +130,8 @@
                     </div>
                 </div>
                 <h2 class="ink-heading mt-8 text-4xl font-black text-ink">Menyusun Naskah Soal...</h2>
-                <p class="mt-4 animate-pulse text-sm font-bold text-ink/50">Mohon tunggu, AI sedang merancang butir soal sesuai struktur Anda.</p>
+                <p class="mt-4 animate-pulse text-sm font-bold text-ink/50" x-text="progressMessage"></p>
+                <p class="mt-2 text-[10px] font-black uppercase tracking-widest text-ink/20 text-center max-w-xs">AI sedang merancang butir soal sesuai struktur. Proses ini aman dari server timeout.</p>
             </div>
         </template>
 

@@ -24,6 +24,49 @@ class AiQuestionService
         private readonly AiImageService $imageService
     ) {}
 
+    /**
+     * Generate questions for a single structure.
+     * This is used for chunked generation to avoid server timeouts.
+     */
+    public function generateSingle(ExamSession $session, QuestionStructure $structure): int
+    {
+        $initialOffset = $session->questions()->count();
+        $created = 0;
+        
+        $providersToTry = $this->getAvailableProviders();
+        $generated = null;
+        $usedProviderName = 'none';
+
+        foreach ($providersToTry as $providerName) {
+            Log::info("Step-generation: Attempting {$providerName} for structure {$structure->id}");
+            $generated = $this->tryProvider($providerName, $session, collect([$structure]), $initialOffset);
+            
+            if ($generated !== null && $generated > 0) {
+                $created = $generated;
+                $usedProviderName = $providerName;
+                break;
+            }
+        }
+
+        // Fallback
+        if ($created === 0) {
+            Log::warning("Step-generation: Falling back to local for structure {$structure->id}");
+            $created = $this->generateForStructureLocal($session, $structure, $initialOffset);
+        }
+
+        // Log usage (simplified for single step)
+        AiUsageLog::create([
+            'user_id' => $session->user_id,
+            'exam_session_id' => $session->id,
+            'provider' => $usedProviderName,
+            'tokens_used' => 0, // Estimasi atau abaikan untuk step
+            'status' => 'success',
+            'metadata' => ['structure_id' => $structure->id, 'mode' => 'chunked'],
+        ]);
+
+        return $created;
+    }
+
     public function generate(ExamSession $session): int
     {
         $session->loadMissing('structures');

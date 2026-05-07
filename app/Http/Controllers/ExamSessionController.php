@@ -205,6 +205,32 @@ class ExamSessionController extends Controller
         }
     }
 
+    public function generateStep(ExamSession $examSession, QuestionStructure $structure, AiQuestionService $aiQuestionService)
+    {
+        $this->authorizeOwner($examSession);
+        abort_unless($structure->exam_session_id === $examSession->id, 404);
+
+        set_time_limit(120);
+
+        try {
+            $created = $aiQuestionService->generateSingle($examSession, $structure);
+            
+            // Jika ini adalah step terakhir, kita bisa update status session
+            // Tapi kita serahkan ke frontend untuk redirect ke hasil
+            
+            return response()->json([
+                'success' => true,
+                'message' => "Bagian '{$structure->name}' berhasil dibuat ({$created} soal).",
+                'created' => $created
+            ]);
+        } catch (AiProviderException $exception) {
+            return response()->json(['success' => false, 'message' => $exception->getMessage()], 422);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error("Step Generation Error: " . $e->getMessage());
+            return response()->json(['success' => false, 'message' => 'Terjadi kesalahan: ' . $e->getMessage()], 500);
+        }
+    }
+
     public function results(ExamSession $examSession)
     {
         $this->authorizeOwner($examSession);
