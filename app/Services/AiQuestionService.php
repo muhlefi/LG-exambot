@@ -668,6 +668,9 @@ PROMPT;
             'Sulit' => $structure->hard_count,
         ];
 
+        // Pastikan koneksi database tetap hidup
+        DB::reconnect();
+
         foreach ($distributions as $difficulty => $count) {
             for ($i = 1; $i <= $count; $i++) {
                 $created++;
@@ -788,6 +791,10 @@ PROMPT;
 
     private function persistProviderQuestions(ExamSession $session, Collection $structures, int $offset, array $questions): int
     {
+        // Sangat penting: AI request memakan waktu lama, koneksi DB bisa timeout.
+        // Kita paksa reconnect sebelum mulai menulis ke database.
+        DB::reconnect();
+
         $registry = $structures->mapWithKeys(fn($s) => [
             $s->id => [
                 'model' => $s,

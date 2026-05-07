@@ -1,6 +1,7 @@
 <x-layouts.app title="{{ $examSession->title }} - Builder">
     <div x-data="{ 
         generating: false, 
+        isEditModalOpen: false,
         questionType: 'Pilihan Ganda',
         cognitiveLevels: ['C1 Mengingat', 'C2 Memahami', 'C3 Menerapkan'],
         
@@ -31,9 +32,9 @@
         <div class="flex-1">
             <div class="flex items-center gap-3">
                 <span class="rounded-lg bg-fern/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em] text-fern">Assessment Builder</span>
-                <a href="{{ route('sessions.edit', $examSession) }}" class="rounded-full bg-white p-2 text-ink/20 transition-all hover:bg-fern/10 hover:text-fern">
+                <button @click="isEditModalOpen = true" class="rounded-full bg-white p-2 text-ink/20 transition-all hover:bg-fern/10 hover:text-fern">
                     <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                </a>
+                </button>
             </div>
             <h1 class="ink-heading mt-3 text-6xl font-black text-ink leading-tight">{{ $examSession->title }}</h1>
             <div class="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm font-bold text-ink/40">
@@ -70,7 +71,40 @@
         }">
             <button @click="confirmAndDo(() => $dispatch('open-bank-modal'))" class="hover-lift rounded-full border-2 border-ink/5 bg-white px-7 py-4 text-sm font-black text-ink shadow-sm hover:border-ink/10 transition">Ambil dari Bank</button>
             <a href="{{ route('sessions.results', $examSession) }}" class="hover-lift rounded-full border-2 border-fern/20 bg-white/70 px-7 py-4 text-sm font-black text-fern transition hover:bg-limewash">Lihat Hasil</a>
-            <form id="genForm" method="POST" action="{{ route('sessions.generate', $examSession) }}" @submit.prevent="confirmAndDo(() => { generating = true; $el.submit(); })">
+            <form id="genForm" method="POST" action="{{ route('sessions.generate', $examSession) }}" 
+                @submit.prevent="confirmAndDo(async () => { 
+                    generating = true; 
+                    try {
+                        const response = await fetch($el.action, {
+                            method: 'POST',
+                            headers: {
+                                'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                                'Accept': 'application/json',
+                                'X-Requested-With': 'XMLHttpRequest'
+                            }
+                        });
+                        const data = await response.json();
+                        if (data.success) {
+                            window.location.href = data.redirect;
+                        } else {
+                            generating = false;
+                            Swal.fire({
+                                title: 'Gagal',
+                                text: data.message || 'Terjadi kesalahan saat generate soal.',
+                                icon: 'error',
+                                confirmButtonColor: '#1e293b'
+                            });
+                        }
+                    } catch (e) {
+                        generating = false;
+                        Swal.fire({
+                            title: 'Error',
+                            text: 'Koneksi terputus atau server timeout. Silakan coba lagi.',
+                            icon: 'error',
+                            confirmButtonColor: '#1e293b'
+                        });
+                    }
+                })">
                 @csrf
                 <button @disabled($examSession->structures->isEmpty()) class="hover-lift rounded-full bg-ink px-8 py-4 text-sm font-black text-white shadow-2xl shadow-ink/30 transition hover:bg-fern disabled:bg-ink/10 disabled:shadow-none">Generate Naskah Soal</button>
             </form>

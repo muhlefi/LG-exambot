@@ -172,18 +172,37 @@ class ExamSessionController extends Controller
     public function generate(ExamSession $examSession, AiQuestionService $aiQuestionService)
     {
         $this->authorizeOwner($examSession);
+        
+        // Naikkan limit eksekusi karena proses AI memang lama
+        set_time_limit(600); 
 
-        // Jika ingin synchronous (cara lama tapi sudah diperbaiki DB-nya):
-        // set_time_limit(300);
-        // $created = $aiQuestionService->generate($examSession);
-        // return redirect()->route('sessions.results', $examSession)->with('status', "{$created} soal berhasil dibuat.");
+        try {
+            $created = $aiQuestionService->generate($examSession);
+            
+            if (request()->ajax()) {
+                return response()->json([
+                    'success' => true,
+                    'message' => "{$created} soal berhasil dibuat.",
+                    'redirect' => route('sessions.results', $examSession)
+                ]);
+            }
 
-        // Cara Production Ready (Background Job):
-        \App\Jobs\GenerateQuestionsJob::dispatch($examSession);
+            return redirect()
+                ->route('sessions.results', $examSession)
+                ->with('status', "{$created} soal berhasil dibuat.");
 
-        return redirect()
-            ->route('sessions.show', $examSession)
-            ->with('status', "Proses pembuatan soal sedang berjalan di background. Silakan tunggu beberapa saat dan refresh halaman.");
+        } catch (AiProviderException $exception) {
+            if (request()->ajax()) {
+                return response()->json(['success' => false, 'message' => $exception->getMessage()], 422);
+            }
+            return back()->withErrors(['ai_provider' => $exception->getMessage()]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error("Generation Error: " . $e->getMessage());
+            if (request()->ajax()) {
+                return response()->json(['success' => false, 'message' => 'Terjadi kesalahan sistem: ' . $e->getMessage()], 500);
+            }
+            throw $e;
+        }
     }
 
     public function results(ExamSession $examSession)
