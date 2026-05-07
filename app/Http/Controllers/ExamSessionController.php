@@ -172,19 +172,18 @@ class ExamSessionController extends Controller
     public function generate(ExamSession $examSession, AiQuestionService $aiQuestionService)
     {
         $this->authorizeOwner($examSession);
-        set_time_limit(300);
 
-        try {
-            $created = $aiQuestionService->generate($examSession);
-        } catch (AiProviderException $exception) {
-            return back()->withErrors([
-                'ai_provider' => $exception->getMessage(),
-            ]);
-        }
+        // Jika ingin synchronous (cara lama tapi sudah diperbaiki DB-nya):
+        // set_time_limit(300);
+        // $created = $aiQuestionService->generate($examSession);
+        // return redirect()->route('sessions.results', $examSession)->with('status', "{$created} soal berhasil dibuat.");
+
+        // Cara Production Ready (Background Job):
+        \App\Jobs\GenerateQuestionsJob::dispatch($examSession);
 
         return redirect()
-            ->route('sessions.results', $examSession)
-            ->with('status', "{$created} soal berhasil dibuat.");
+            ->route('sessions.show', $examSession)
+            ->with('status', "Proses pembuatan soal sedang berjalan di background. Silakan tunggu beberapa saat dan refresh halaman.");
     }
 
     public function results(ExamSession $examSession)

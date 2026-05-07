@@ -32,75 +32,73 @@ class AiQuestionService
             return 0;
         }
 
-        return DB::transaction(function () use ($session): int {
-            // Kita gunakan sistem append (menambah), bukan menimpa (delete)
-            // Jadi user bisa generate berkali-kali untuk menambah koleksi soal
-            $initialOffset = $session->questions()->count();
-            $created = 0;
-            $usedProviderName = 'none';
-            $usedProvider = false;
+        // Kita gunakan sistem append (menambah), bukan menimpa (delete)
+        // Jadi user bisa generate berkali-kali untuk menambah koleksi soal
+        $initialOffset = $session->questions()->count();
+        $created = 0;
+        $usedProviderName = 'none';
+        $usedProvider = false;
 
-            // Group structures by question_type to minimize API requests
-            $groups = $session->structures->groupBy('question_type');
+        // Group structures by question_type to minimize API requests
+        $groups = $session->structures->groupBy('question_type');
 
-            foreach ($groups as $questionType => $structures) {
-                $groupGenerated = false;
+        foreach ($groups as $questionType => $structures) {
+            $groupGenerated = false;
 
-                // Coba semua provider yang punya API key
-                $providersToTry = $this->getAvailableProviders();
+            // Coba semua provider yang punya API key
+            $providersToTry = $this->getAvailableProviders();
 
-                foreach ($providersToTry as $providerName) {
-                    Log::info("Attempting to generate with {$providerName}", [
-                        'exam_session_id' => $session->id,
-                        'question_type' => $questionType,
-                    ]);
+            foreach ($providersToTry as $providerName) {
+                Log::info("Attempting to generate with {$providerName}", [
+                    'exam_session_id' => $session->id,
+                    'question_type' => $questionType,
+                ]);
 
-                    $generated = $this->tryProvider($providerName, $session, $structures, $initialOffset + $created);
-                    
-                    if ($generated !== null && $generated > 0) {
-                        $created += $generated;
-                        $usedProvider = true;
-                        $usedProviderName = $providerName;
-                        $groupGenerated = true;
-                        Log::info("✅ Successfully generated with {$providerName}", [
-                            'questions_count' => $generated,
-                            'exam_session_id' => $session->id,
-                        ]);
-                        break;
-                    }
-                    
-                    Log::info("{$providerName} failed, trying next provider");
-                }
-
-                // Final fallback to local-draft if all providers failed
-                if (!$groupGenerated) {
-                    Log::warning("All AI providers failed for question type {$questionType}, falling back to local draft", [
+                $generated = $this->tryProvider($providerName, $session, $structures, $initialOffset + $created);
+                
+                if ($generated !== null && $generated > 0) {
+                    $created += $generated;
+                    $usedProvider = true;
+                    $usedProviderName = $providerName;
+                    $groupGenerated = true;
+                    Log::info("✅ Successfully generated with {$providerName}", [
+                        'questions_count' => $generated,
                         'exam_session_id' => $session->id,
                     ]);
-                    foreach ($structures as $structure) {
-                        $created += $this->generateForStructureLocal($session, $structure, $initialOffset + $created);
-                    }
+                    break;
                 }
+                
+                Log::info("{$providerName} failed, trying next provider");
             }
 
-            AiUsageLog::create([
-                'user_id' => $session->user_id,
-                'exam_session_id' => $session->id,
-                'provider' => $usedProviderName,
-                'tokens_used' => Str::of($this->promptBuilder->build($session))->wordCount(),
-                'status' => 'success',
-                'metadata' => [
-                    'mode' => $usedProvider ? 'provider-used' : 'local-draft',
-                    'note' => $usedProvider
-                        ? "{$usedProviderName} API used with fallback to local draft."
-                        : 'Local deterministic generator is used (all providers unavailable or failed).',
-                ],
-            ]);
+            // Final fallback to local-draft if all providers failed
+            if (!$groupGenerated) {
+                Log::warning("All AI providers failed for question type {$questionType}, falling back to local draft", [
+                    'exam_session_id' => $session->id,
+                ]);
+                foreach ($structures as $structure) {
+                    $created += $this->generateForStructureLocal($session, $structure, $initialOffset + $created);
+                }
+            }
+        }
 
-            $session->update(['status' => 'generated']);
+        AiUsageLog::create([
+            'user_id' => $session->user_id,
+            'exam_session_id' => $session->id,
+            'provider' => $usedProviderName,
+            'tokens_used' => Str::of($this->promptBuilder->build($session))->wordCount(),
+            'status' => 'success',
+            'metadata' => [
+                'mode' => $usedProvider ? 'provider-used' : 'local-draft',
+                'note' => $usedProvider
+                    ? "{$usedProviderName} API used with fallback to local draft."
+                    : 'Local deterministic generator is used (all providers unavailable or failed).',
+            ],
+        ]);
 
-            return $created;
-        });
+        $session->update(['status' => 'generated']);
+
+        return $created;
     }
 
     private function getAvailableProviders(): array
@@ -675,20 +673,23 @@ PROMPT;
                 $created++;
                 $sequence = $offset + $created;
                 $cognitive = $this->pickCognitiveLevel($structure, $sequence);
-                $question = Question::create([
-                    'exam_session_id' => $session->id,
-                    'question_structure_id' => $structure->id,
-                    'question_type' => $structure->question_type,
-                    'question_text' => $this->questionText($session, $structure, $difficulty, $cognitive, $sequence),
-                    'explanation' => $this->explanationText($session, $difficulty, $cognitive),
-                    'difficulty' => $difficulty,
-                    'cognitive_level' => $cognitive,
-                    'answer_key' => $this->answerKey($structure, $sequence),
-                    'sort_order' => $sequence,
-                ]);
+                
+                DB::transaction(function () use ($session, $structure, $difficulty, $cognitive, $sequence) {
+                    $question = Question::create([
+                        'exam_session_id' => $session->id,
+                        'question_structure_id' => $structure->id,
+                        'question_type' => $structure->question_type,
+                        'question_text' => $this->questionText($session, $structure, $difficulty, $cognitive, $sequence),
+                        'explanation' => $this->explanationText($session, $difficulty, $cognitive),
+                        'difficulty' => $difficulty,
+                        'cognitive_level' => $cognitive,
+                        'answer_key' => $this->answerKey($structure, $sequence),
+                        'sort_order' => $sequence,
+                    ]);
 
-                $this->createOptions($question, $structure, $sequence);
-                $this->createBlueprint($question, $session, $structure, $cognitive);
+                    $this->createOptions($question, $structure, $sequence);
+                    $this->createBlueprint($question, $session, $structure, $cognitive);
+                });
             }
         }
 
@@ -840,27 +841,35 @@ PROMPT;
                 $isDiagram = Str::contains(strtoupper($matches[0]), 'DIAGRAM');
                 
                 // Panggil layanan DALL-E 3 untuk membuat & menyimpan gambar
-                $questionImage = $this->imageService->generateAndSave($description, $isDiagram);
+                // Catatan: Ini dilakukan di luar transaksi DB karena lambat
+                try {
+                    $questionImage = $this->imageService->generateAndSave($description, $isDiagram);
+                } catch (Throwable $e) {
+                    Log::warning("Image generation failed for question {$sequence}: " . $e->getMessage());
+                }
                 
                 // Hapus tag [GAMBAR/DIAGRAM] karena kita sudah punya file gambarnya
                 $rawText = trim(preg_replace('/\[(?:GAMBAR|DIAGRAM):\s*(.*?)\]/i', '', $rawText));
             }
 
-            $question = Question::create([
-                'exam_session_id' => $session->id,
-                'question_structure_id' => $structure->id,
-                'question_type' => $structure->question_type,
-                'question_text' => $rawText,
-                'question_image' => $questionImage,
-                'explanation' => (string) ($item['explanation'] ?? $this->explanationText($session, $difficulty, $cognitive)),
-                'difficulty' => $difficulty,
-                'cognitive_level' => $cognitive,
-                'answer_key' => $answerKey,
-                'sort_order' => $sequence,
-            ]);
+            // Gunakan transaksi kecil untuk setiap satu soal agar data konsisten (soal + opsi + blueprint)
+            DB::transaction(function () use ($session, $structure, $rawText, $questionImage, $item, $difficulty, $cognitive, $answerKey, $sequence) {
+                $question = Question::create([
+                    'exam_session_id' => $session->id,
+                    'question_structure_id' => $structure->id,
+                    'question_type' => $structure->question_type,
+                    'question_text' => $rawText,
+                    'question_image' => $questionImage,
+                    'explanation' => (string) ($item['explanation'] ?? $this->explanationText($session, $difficulty, $cognitive)),
+                    'difficulty' => $difficulty,
+                    'cognitive_level' => $cognitive,
+                    'answer_key' => $answerKey,
+                    'sort_order' => $sequence,
+                ]);
 
-            $this->createProviderOptions($question, $structure, $sequence, $item['options'] ?? null);
-            $this->createProviderBlueprint($question, $session, $structure, $cognitive, $item['blueprint'] ?? null);
+                $this->createProviderOptions($question, $structure, $sequence, $item['options'] ?? null);
+                $this->createProviderBlueprint($question, $session, $structure, $cognitive, $item['blueprint'] ?? null);
+            });
         }
 
         return $created;
