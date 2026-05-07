@@ -6,6 +6,7 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <meta name="description" content="LG ExamBot - Platform bertenaga AI untuk memudahkan guru menyusun soal, kisi-kisi, kunci jawaban, dan melaksanakan quiz interaktif dalam satu studio.">
     <title>{{ $title ?? config('app.name', 'LG ExamBot') }}</title>
+    <link rel="icon" href="{{ asset('img/logo.jpeg') }}" type="image/jpeg">
     @vite(['resources/css/app.css', 'resources/js/app.js'])
     @livewireStyles
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
