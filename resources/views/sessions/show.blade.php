@@ -1,29 +1,5 @@
 <x-layouts.app title="{{ $examSession->title }} - Builder">
-    <div x-data="{ 
-        generating: false, 
-        progressMessage: 'Memulai proses...',
-        isEditModalOpen: false,
-        questionType: 'Pilihan Ganda',
-        cognitiveLevels: ['C1 Mengingat', 'C2 Memahami', 'C3 Menerapkan'],
-        
-        structures: @json($examSession->structures->map(fn($s) => ['id' => $s->id, 'name' => $s->name ?: 'Bagian Soal'])),
-
-        isChoice() { 
-            return ['Pilihan Ganda', 'Pilihan Ganda Kompleks', 'HOTS'].includes(this.questionType) 
-        },
-        
-        updateDefaults() {
-            if (this.questionType === 'HOTS') {
-                this.cognitiveLevels = ['C4 Menganalisis', 'C5 Mengevaluasi', 'C6 Mencipta'];
-            } else if (['Essay', 'Studi Kasus'].includes(this.questionType)) {
-                this.cognitiveLevels = ['C3 Menerapkan', 'C4 Menganalisis', 'C5 Mengevaluasi'];
-            } else if (this.questionType === 'Isian Singkat') {
-                this.cognitiveLevels = ['C1 Mengingat', 'C2 Memahami'];
-            } else {
-                this.cognitiveLevels = ['C1 Mengingat', 'C2 Memahami', 'C3 Menerapkan'];
-            }
-        }
-    }" x-init="$watch('questionType', () => updateDefaults())">
+    <div x-data="sessionBuilder">
     <nav class="mb-6 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.2em] text-ink/30">
         <a href="{{ route('dashboard') }}" class="hover:text-fern">Dashboard</a>
         <span>/</span>
@@ -46,32 +22,7 @@
                 <span class="flex items-center gap-2"><span class="h-1.5 w-1.5 rounded-full bg-ink"></span> {{ $examSession->education_level }} {{ $examSession->class_level }}</span>
             </div>
         </div>
-        <div class="flex flex-wrap gap-3" x-data="{ 
-            hasQuestions: {{ $examSession->questions_count > 0 ? 'true' : 'false' }},
-            confirmAndDo(callback) {
-                if (this.hasQuestions) {
-                    Swal.fire({
-                        title: 'Soal sudah ada',
-                        text: 'Sesi ini sudah memiliki soal. Yakin ingin menambah atau men-generate ulang soal?',
-                        icon: 'warning',
-                        showCancelButton: true,
-                        confirmButtonColor: '#1e293b',
-                        cancelButtonColor: '#ef4444',
-                        confirmButtonText: 'Ya, Lanjutkan',
-                        cancelButtonText: 'Batal',
-                        customClass: {
-                            popup: 'rounded-[2rem]',
-                            confirmButton: 'rounded-full px-6 py-3',
-                            cancelButton: 'rounded-full px-6 py-3'
-                        }
-                    }).then((result) => {
-                        if (result.isConfirmed) callback();
-                    });
-                } else {
-                    callback();
-                }
-            }
-        }">
+        <div class="flex flex-wrap gap-3">
             <button @click="confirmAndDo(() => $dispatch('open-bank-modal'))" class="hover-lift rounded-full border-2 border-ink/5 bg-white px-7 py-4 text-sm font-black text-ink shadow-sm hover:border-ink/10 transition">Ambil dari Bank</button>
             <a href="{{ route('sessions.results', $examSession) }}" class="hover-lift rounded-full border-2 border-fern/20 bg-white/70 px-7 py-4 text-sm font-black text-fern transition hover:bg-limewash">Lihat Hasil</a>
             <form id="genForm" method="POST" action="{{ route('sessions.generate', $examSession) }}" 
@@ -498,3 +449,102 @@
         </div>
     </div>
 </x-layouts.app>
+
+<script>
+document.addEventListener('alpine:init', () => {
+    Alpine.data('sessionBuilder', () => ({
+        generating: false,
+        progressMessage: 'Memulai proses...',
+        isEditModalOpen: false,
+        questionType: 'Pilihan Ganda',
+        cognitiveLevels: ['C1 Mengingat', 'C2 Memahami', 'C3 Menerapkan'],
+        structures: @json($examSession->structures->map(fn($s) => ['id' => $s->id, 'name' => $s->name ?: 'Bagian Soal'])),
+        hasQuestions: {{ $examSession->questions_count > 0 ? 'true' : 'false' }},
+        generateUrl: '{{ url('/sessions/'.$examSession->id.'/generate-step') }}',
+        resultsUrl: '{{ route('sessions.results', $examSession) }}',
+        csrfToken: '{{ csrf_token() }}',
+
+        init() {
+            this.$watch('questionType', () => this.updateDefaults());
+        },
+
+        confirmAndDo(callback) {
+            if (this.hasQuestions) {
+                Swal.fire({
+                    title: 'Soal sudah ada',
+                    text: 'Sesi ini sudah memiliki soal. Yakin ingin menambah atau men-generate ulang soal?',
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#1e293b',
+                    cancelButtonColor: '#ef4444',
+                    confirmButtonText: 'Ya, Lanjutkan',
+                    cancelButtonText: 'Batal',
+                    customClass: {
+                        popup: 'rounded-[2rem]',
+                        confirmButton: 'rounded-full px-6 py-3',
+                        cancelButton: 'rounded-full px-6 py-3',
+                    }
+                }).then((result) => {
+                    if (result.isConfirmed) callback();
+                });
+            } else {
+                callback();
+            }
+        },
+
+        async runGenerate() {
+            this.generating = true;
+            try {
+                let totalCreated = 0;
+                for (let i = 0; i < this.structures.length; i++) {
+                    const structure = this.structures[i];
+                    this.progressMessage = `Menyusun ${structure.name} (${i + 1}/${this.structures.length})...`;
+
+                    const stepUrl = `${this.generateUrl}/${structure.id}`;
+                    const response = await fetch(stepUrl, {
+                        method: 'POST',
+                        headers: {
+                            'X-CSRF-TOKEN': this.csrfToken,
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    });
+
+                    const data = await response.json();
+                    if (!data.success) {
+                        throw new Error(data.message || 'Gagal generate bagian ini');
+                    }
+                    totalCreated += data.created;
+                }
+
+                this.progressMessage = 'Menyelesaikan naskah...';
+                window.location.href = this.resultsUrl;
+            } catch (e) {
+                this.generating = false;
+                Swal.fire({
+                    title: 'Gagal',
+                    text: e.message || 'Terjadi kesalahan sistem.',
+                    icon: 'error',
+                    confirmButtonColor: '#1e293b'
+                });
+            }
+        },
+
+        isChoice() {
+            return ['Pilihan Ganda', 'Pilihan Ganda Kompleks', 'HOTS'].includes(this.questionType);
+        },
+
+        updateDefaults() {
+            if (this.questionType === 'HOTS') {
+                this.cognitiveLevels = ['C4 Menganalisis', 'C5 Mengevaluasi', 'C6 Mencipta'];
+            } else if (['Essay', 'Studi Kasus'].includes(this.questionType)) {
+                this.cognitiveLevels = ['C3 Menerapkan', 'C4 Menganalisis', 'C5 Mengevaluasi'];
+            } else if (this.questionType === 'Isian Singkat') {
+                this.cognitiveLevels = ['C1 Mengingat', 'C2 Memahami'];
+            } else {
+                this.cognitiveLevels = ['C1 Mengingat', 'C2 Memahami', 'C3 Menerapkan'];
+            }
+        }
+    }));
+});
+</script>
