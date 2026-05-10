@@ -5,6 +5,7 @@ use App\Http\Controllers\BankQuestionController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\ExamSessionController;
 use App\Http\Controllers\QuizController;
+use App\Http\Controllers\QuizGuestController;
 use App\Http\Controllers\TutorialController;
 use Illuminate\Support\Facades\Route;
 
@@ -15,8 +16,16 @@ Route::get('/', function () {
 Route::middleware('guest')->group(function () {
     Route::get('/login', [AuthController::class, 'showLogin'])->name('login');
     Route::post('/login', [AuthController::class, 'login'])->name('login.store');
-    //Route::get('/register', [AuthController::class, 'showRegister'])->name('register');
-    //Route::post('/register', [AuthController::class, 'register'])->name('register.store');
+});
+
+// Guest Quiz Routes (No Auth Required)
+Route::prefix('quiz')->name('quiz.')->group(function () {
+    Route::get('/join', [QuizGuestController::class, 'join'])->name('join');
+    Route::get('/{code}', [QuizGuestController::class, 'show'])->name('show');
+    Route::post('/{code}/start', [QuizGuestController::class, 'start'])->name('start');
+    Route::get('/{code}/attempt', [QuizGuestController::class, 'attempt'])->name('attempt');
+    Route::post('/{code}/submit', [QuizGuestController::class, 'submit'])->name('submit');
+    Route::get('/{code}/result', [QuizGuestController::class, 'result'])->name('result');
 });
 
 Route::middleware('auth')->group(function () {
@@ -60,4 +69,12 @@ Route::middleware('auth')->group(function () {
     Route::post('/sessions/{examSession}/quizzes', [QuizController::class, 'store'])->name('quizzes.store');
     Route::get('/quizzes/{quiz}', [QuizController::class, 'show'])->name('quizzes.show');
     Route::delete('/quizzes/{quiz}', [QuizController::class, 'destroy'])->name('quizzes.destroy');
+
+    // Quiz Activation Toggle
+    Route::post('/quizzes/{quiz}/activate', [QuizController::class, 'activate'])->name('quizzes.activate');
+    Route::post('/quizzes/{quiz}/deactivate', [QuizController::class, 'deactivate'])->name('quizzes.deactivate');
+
+    // Teacher Quiz Results
+    Route::get('/quiz-results', [QuizController::class, 'results'])->name('quiz.results');
+    Route::get('/quiz-results/{quiz}', [QuizController::class, 'resultDetail'])->name('quiz.result.detail');
 });

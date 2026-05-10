@@ -71,6 +71,7 @@
                         ['label' => 'Sesi Soal', 'route' => 'sessions.index', 'match' => 'sessions.*'],
                         ['label' => 'Bank Soal', 'route' => 'bank.index', 'match' => 'bank.*'],
                         ['label' => 'Quiz', 'route' => 'quizzes.index', 'match' => 'quizzes.*'],
+                        ['label' => 'Hasil Quiz', 'route' => 'quiz.results', 'match' => 'quiz.results*'],
                     ];
                 @endphp
                 
