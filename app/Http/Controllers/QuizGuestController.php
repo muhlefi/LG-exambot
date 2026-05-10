@@ -161,9 +161,14 @@ class QuizGuestController extends Controller
 
         foreach ($quiz->examSession->questions as $question) {
             $selectedAnswer = $answers[$question->id] ?? null;
-            $isCorrect = $selectedAnswer !== null && $selectedAnswer === $question->answer_key;
 
-            if ($isCorrect) {
+            if (in_array($question->question_type, ['essay', 'fill_blank'])) {
+                $isCorrect = null;
+            } else {
+                $isCorrect = $selectedAnswer !== null && $selectedAnswer === $question->answer_key;
+            }
+
+            if ($isCorrect === true) {
                 $correctCount++;
             }
 
@@ -179,7 +184,8 @@ class QuizGuestController extends Controller
             );
         }
 
-        $score = $totalQuestions > 0 ? round(($correctCount / $totalQuestions) * 100, 1) : 0;
+        $scoredQuestions = $quiz->examSession->questions->whereNotIn('question_type', ['essay', 'fill_blank'])->count();
+        $score = $scoredQuestions > 0 ? round(($correctCount / $scoredQuestions) * 100, 1) : 0;
 
         $participant->update([
             'score' => $score,

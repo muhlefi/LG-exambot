@@ -88,10 +88,11 @@
                     @foreach($quiz->examSession->questions as $index => $question)
                         @php
                             $answer = $participant->answers->where('question_id', $question->id)->first();
-                            $status = !$answer || $answer->selected_answer === null ? 'empty' : ($answer->is_correct ? 'correct' : 'wrong');
+                            $isEssay = in_array($question->question_type, ['essay', 'fill_blank']);
+                            $status = !$answer || $answer->selected_answer === null ? 'empty' : ($isEssay ? 'pending' : ($answer->is_correct ? 'correct' : 'wrong'));
                         @endphp
-                        <div class="flex items-center gap-3 p-3 rounded-xl @if($status === 'correct') bg-fern/5 @elseif($status === 'wrong') bg-clay/5 @else bg-ink/5 @endif">
-                            <span class="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-xs font-black @if($status === 'correct') bg-fern text-white @elseif($status === 'wrong') bg-clay text-white @else bg-ink/20 text-ink/40 @endif">
+                        <div class="flex items-center gap-3 p-3 rounded-xl @if($status === 'correct') bg-fern/5 @elseif($status === 'wrong') bg-clay/5 @elseif($status === 'pending') bg-honey/5 @else bg-ink/5 @endif">
+                            <span class="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-xs font-black @if($status === 'correct') bg-fern text-white @elseif($status === 'wrong') bg-clay text-white @elseif($status === 'pending') bg-honey text-white @else bg-ink/20 text-ink/40 @endif">
                                 {{ $index + 1 }}
                             </span>
                             <div class="flex-1 min-w-0">
@@ -100,12 +101,16 @@
                                     <p class="text-xs text-clay mt-0.5">Jawabanmu: {{ $answer->selected_answer }} · Kunci: {{ $question->answer_key }}</p>
                                 @elseif($status === 'empty')
                                     <p class="text-xs text-ink/40 mt-0.5">Tidak dijawab</p>
+                                @elseif($status === 'pending')
+                                    <p class="text-xs text-honey mt-0.5">Menunggu penilaian guru</p>
                                 @endif
                             </div>
                             @if($status === 'correct')
                                 <svg class="w-5 h-5 text-fern shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path></svg>
                             @elseif($status === 'wrong')
                                 <svg class="w-5 h-5 text-clay shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M6 18L18 6M6 6l12 12"></path></svg>
+                            @elseif($status === 'pending')
+                                <svg class="w-5 h-5 text-honey shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                             @endif
                         </div>
                     @endforeach
@@ -116,13 +121,23 @@
                     @foreach($quiz->examSession->questions as $index => $question)
                         @php
                             $answer = $participant->answers->where('question_id', $question->id)->first();
-                            $status = !$answer || $answer->selected_answer === null ? 'empty' : ($answer->is_correct ? 'correct' : 'wrong');
+                            $isEssay = in_array($question->question_type, ['essay', 'fill_blank']);
+                            $status = !$answer || $answer->selected_answer === null ? 'empty' : ($isEssay ? 'pending' : ($answer->is_correct ? 'correct' : 'wrong'));
                         @endphp
                         <div class="rounded-xl border border-ink/10 bg-white p-4">
                             <div class="flex items-start gap-3 mb-3">
                                 <span class="w-7 h-7 shrink-0 rounded-lg flex items-center justify-center text-xs font-black bg-ink/5 text-ink/50">{{ $index + 1 }}</span>
                                 <div class="text-sm font-bold text-ink flex-1">{!! $question->question_text !!}</div>
+                                @if($isEssay)
+                                    <span class="shrink-0 rounded-lg bg-honey/10 px-2 py-1 text-[10px] font-black text-honey uppercase">Pending</span>
+                                @endif
                             </div>
+                            @if($isEssay)
+                                <div class="ml-10 rounded-xl bg-ink/5 p-4">
+                                    <p class="text-xs font-black text-ink/40 uppercase mb-2">Jawabanmu</p>
+                                    <p class="text-sm font-bold text-ink">{{ $answer?->selected_answer ?: 'Belum dijawab' }}</p>
+                                </div>
+                            @else
                             <div class="space-y-2 ml-10">
                                 @foreach($question->options as $option)
                                     <div class="flex items-center gap-2 text-sm rounded-lg p-2 @if($option->option_label === $question->answer_key) bg-fern/10 border border-fern/20 @elseif($status === 'wrong' && $option->option_label === $answer?->selected_answer) bg-clay/10 border border-clay/20 @endif">
@@ -136,8 +151,9 @@
                                     </div>
                                 @endforeach
                             </div>
+                            @endif
                             @if($question->explanation)
-                                <div class="mt-3 ml-10 rounded-lg bg-honey/10 border border-honey/20 p-3">
+                                <div class="mt-3 rounded-lg bg-honey/10 border border-honey/20 p-3">
                                     <p class="text-xs font-black text-honey uppercase mb-1">Pembahasan</p>
                                     <p class="text-sm text-ink/70">{!! $question->explanation !!}</p>
                                 </div>

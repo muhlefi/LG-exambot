@@ -116,8 +116,8 @@
             @foreach($quiz->examSession->questions as $question)
                 @php
                     $qNum++;
-                    $correctPct = $quiz->participants->count() > 0 
-                        ? round(($quiz->participants->whereHas('answers', fn($a) => $a->where('question_id', $question->id)->where('is_correct', true))->count() / $quiz->participants->count()) * 100, 1)
+                    $correctPct = $quiz->participants->count() > 0
+                        ? round(($question->correct_count / $quiz->participants->count()) * 100, 1)
                         : 0;
                 @endphp
                 <div class="rounded-xl border border-ink/10 bg-white/70 p-4">

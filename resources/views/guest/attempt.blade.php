@@ -20,9 +20,8 @@
 <body class="min-h-screen bg-ink/5" x-data="{
     currentIndex: 0,
     answers: {},
+    textAnswers: {},
     questions: {{ Js::from($questions->values()) }},
-    totalTime: {{ $quiz->duration * 60 }},
-    remainingTime: {{ $quiz->duration * 60 }},
     submitted: false,
     get currentQuestion() { return this.questions[this.currentIndex] },
     get progress() { return Math.round(((this.currentIndex + 1) / this.questions.length) * 100) },
@@ -35,8 +34,20 @@
     isSelected(optionLabel) {
         return this.answers[this.currentQuestion.id] === optionLabel;
     },
+    setTextAnswer(value) {
+        this.textAnswers[this.currentQuestion.id] = value;
+    },
+    getTextAnswer() {
+        return this.textAnswers[this.currentQuestion.id] || '';
+    },
+    isEssay() {
+        return this.currentQuestion && this.currentQuestion.question_type === 'essay';
+    },
+    isFillBlank() {
+        return this.currentQuestion && this.currentQuestion.question_type === 'fill_blank';
+    },
     answeredCount() {
-        return Object.keys(this.answers).length;
+        return Object.keys(this.answers).length + Object.keys(this.textAnswers).length;
     },
     submit() {
         if (this.submitted) return;
@@ -52,6 +63,14 @@
         form.appendChild(csrf);
         
         Object.entries(this.answers).forEach(([qId, answer]) => {
+            const input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = 'answers[' + qId + ']';
+            input.value = answer;
+            form.appendChild(input);
+        });
+        
+        Object.entries(this.textAnswers).forEach(([qId, answer]) => {
             const input = document.createElement('input');
             input.type = 'hidden';
             input.name = 'answers[' + qId + ']';
@@ -81,13 +100,13 @@
     <header class="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b border-ink/5">
         <div class="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
             <div class="flex items-center gap-3">
-                <div class="w-8 h-8 rounded-lg bg-fern flex items-center justify-center text-xs font-black text-white">LG</div>
-                <div>
-                    <p class="text-xs font-black text-ink/40">{{ $participant->student_name }}</p>
-                    <p class="text-sm font-black text-ink leading-none">{{ $quiz->title }}</p>
+                <div class="w-8 h-8 rounded-lg bg-fern flex items-center justify-center text-xs font-black text-white shrink-0">LG</div>
+                <div class="min-w-0">
+                    <p class="text-xs font-black text-ink/40 truncate max-w-[150px] sm:max-w-[250px]">{{ $participant->student_name }}</p>
+                    <p class="text-sm font-black text-ink leading-none truncate max-w-[150px] sm:max-w-[250px]">{{ $quiz->title }}</p>
                 </div>
             </div>
-            <div class="text-right">
+            <div class="text-right shrink-0">
                 <p class="text-[10px] font-black text-ink/40 uppercase tracking-widest">Sisa Waktu</p>
                 <p class="text-xl font-black text-clay" id="timer">--:--</p>
             </div>
@@ -108,9 +127,17 @@
                 <span class="rounded-full bg-honey px-4 py-1.5 text-xs font-black text-white">
                     Soal <span x-text="currentIndex + 1"></span> / <span x-text="questions.length"></span>
                 </span>
-                <span class="text-xs font-black text-ink/40">
-                    <span x-text="answeredCount()"></span> dijawab
-                </span>
+                <div class="flex items-center gap-2">
+                    <template x-if="isEssay()">
+                        <span class="rounded-full bg-honey/20 px-3 py-1 text-[10px] font-black text-honey uppercase tracking-widest">Esai</span>
+                    </template>
+                    <template x-if="isFillBlank()">
+                        <span class="rounded-full bg-fern/20 px-3 py-1 text-[10px] font-black text-fern uppercase tracking-widest">Isian</span>
+                    </template>
+                    <span class="text-xs font-black text-ink/40">
+                        <span x-text="answeredCount()"></span> dijawab
+                    </span>
+                </div>
             </div>
 
             <!-- Question Text -->
@@ -127,33 +154,48 @@
                 </template>
             </div>
 
-            <!-- Options -->
-            <div class="space-y-3">
-                <template x-for="option in currentQuestion.options" :key="option.id">
-                    <button 
-                        type="button"
-                        @click="selectAnswer(option.option_label)"
-                        class="w-full flex items-center gap-4 rounded-2xl border-2 p-4 text-left transition-all duration-200"
-                        :class="isSelected(option.option_label) 
-                            ? 'border-fern bg-fern/5 shadow-sm shadow-fern/10' 
-                            : 'border-ink/10 bg-white hover:border-fern/30 hover:bg-fern/5'"
-                    >
-                        <span 
-                            class="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center text-sm font-black transition-all"
+            <!-- Multiple Choice Options -->
+            <template x-if="!isEssay() && !isFillBlank() && currentQuestion.options">
+                <div class="space-y-3">
+                    <template x-for="option in currentQuestion.options" :key="option.id">
+                        <button 
+                            type="button"
+                            @click="selectAnswer(option.option_label)"
+                            class="w-full flex items-center gap-4 rounded-2xl border-2 p-4 text-left transition-all duration-200"
                             :class="isSelected(option.option_label) 
-                                ? 'bg-fern text-white' 
-                                : 'bg-ink/5 text-ink/50'"
-                            x-text="option.option_label"
-                        ></span>
-                        <span class="text-sm font-bold text-ink flex-1" x-html="marked.parseInline(option.option_text || '')"></span>
-                        <template x-if="isSelected(option.option_label)">
-                            <svg class="w-5 h-5 text-fern shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
-                            </svg>
-                        </template>
-                    </button>
-                </template>
-            </div>
+                                ? 'border-fern bg-fern/5 shadow-sm shadow-fern/10' 
+                                : 'border-ink/10 bg-white hover:border-fern/30 hover:bg-fern/5'"
+                        >
+                            <span 
+                                class="w-10 h-10 shrink-0 rounded-xl flex items-center justify-center text-sm font-black transition-all"
+                                :class="isSelected(option.option_label) 
+                                    ? 'bg-fern text-white' 
+                                    : 'bg-ink/5 text-ink/50'"
+                                x-text="option.option_label"
+                            ></span>
+                            <span class="text-sm font-bold text-ink flex-1" x-html="marked.parseInline(option.option_text || '')"></span>
+                            <template x-if="isSelected(option.option_label)">
+                                <svg class="w-5 h-5 text-fern shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7"></path>
+                                </svg>
+                            </template>
+                        </button>
+                    </template>
+                </div>
+            </template>
+
+            <!-- Essay / Fill in Blank Text Input -->
+            <template x-if="isEssay() || isFillBlank()">
+                <div>
+                    <textarea 
+                        x-model="textAnswers[currentQuestion.id]"
+                        @input="setTextAnswer($event.target.value)"
+                        placeholder="{{ isEssay() ? 'Tulis jawaban esaimu di sini...' : 'Isi jawaban di sini...' }}"
+                        class="w-full min-h-[150px] rounded-2xl border-2 border-ink/10 bg-white p-4 text-sm font-bold text-ink outline-none focus:border-fern focus:bg-fern/5 transition-all resize-none"
+                    ></textarea>
+                    <p class="mt-2 text-xs font-bold text-ink/40">Jawaban akan dinilai oleh guru.</p>
+                </div>
+            </template>
         </div>
     </main>
 
@@ -163,13 +205,13 @@
             <button 
                 @click="prev()" 
                 :disabled="currentIndex === 0"
-                class="px-6 py-3 rounded-xl font-black text-sm border-2 border-ink/10 text-ink/50 disabled:opacity-30 transition hover:bg-ink/5"
+                class="px-4 sm:px-6 py-3 rounded-xl font-black text-sm border-2 border-ink/10 text-ink/50 disabled:opacity-30 transition hover:bg-ink/5 whitespace-nowrap"
             >
                 ← Sebelumnya
             </button>
             
             <template x-if="currentIndex < questions.length - 1">
-                <button @click="next()" class="px-8 py-3 rounded-xl font-black text-sm bg-ink text-white transition hover:bg-ink/80">
+                <button @click="next()" class="px-4 sm:px-8 py-3 rounded-xl font-black text-sm bg-ink text-white transition hover:bg-ink/80 whitespace-nowrap">
                     Selanjutnya →
                 </button>
             </template>
@@ -178,7 +220,7 @@
                 <button 
                     @click="submit()" 
                     :disabled="submitted"
-                    class="px-8 py-3 rounded-xl font-black text-sm bg-fern text-white shadow-lg shadow-fern/20 transition hover:-translate-y-0.5 disabled:opacity-50"
+                    class="px-4 sm:px-8 py-3 rounded-xl font-black text-sm bg-fern text-white shadow-lg shadow-fern/20 transition hover:-translate-y-0.5 disabled:opacity-50 whitespace-nowrap"
                 >
                     <span x-text="submitted ? 'Mengirim...' : 'Selesai & Kirim'"></span>
                 </button>

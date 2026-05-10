@@ -105,6 +105,12 @@ class QuizController extends Controller
 
         $quiz->load(['examSession.questions.options', 'participants.answers']);
 
+        foreach ($quiz->examSession->questions as $question) {
+            $question->correct_count = $quiz->participants->filter(function ($participant) use ($question) {
+                return $participant->answers->where('question_id', $question->id)->where('is_correct', true)->isNotEmpty();
+            })->count();
+        }
+
         return view('quiz-results.detail', compact('quiz'));
     }
 }
