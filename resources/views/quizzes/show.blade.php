@@ -22,6 +22,7 @@
     <div x-data="{ 
         currentIndex: 0,
         showAnswer: false,
+        showQR: false,
         questions: {{ Js::from($quiz->examSession->questions) }},
         get currentQuestion() { return this.questions[this.currentIndex] },
         next() { if(this.currentIndex < this.questions.length - 1) { this.currentIndex++; this.showAnswer = false } },
@@ -48,10 +49,14 @@
                 <div class="grid h-12 w-12 place-items-center rounded-2xl bg-fern text-xl font-black text-white shadow-lg shadow-fern/30">LG</div>
                 <div>
                     <h1 class="text-2xl font-black leading-none">{{ $quiz->title }}</h1>
-                    <p class="text-xs font-black uppercase tracking-[0.2em] text-honey mt-1">Presentation Mode</p>
+                    <p class="text-xs font-black uppercase tracking-[0.2em] text-honey mt-1">Kode Quiz: {{ $quiz->quiz_code }}</p>
                 </div>
             </div>
             <div class="flex items-center gap-6">
+                <button @click="showQR = true" class="rounded-full bg-white px-5 py-3 shadow-sm hover:shadow-md transition-all text-ink border border-ink/5 font-black text-sm flex items-center gap-2 hover:text-fern">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"></path></svg>
+                    QR CODE
+                </button>
                 <div class="text-right">
                     <p class="text-sm font-black text-ink/40 uppercase tracking-widest">Waktu Tersisa</p>
                     <p class="text-2xl font-black text-fern" id="timer">--:--</p>
@@ -151,6 +156,27 @@
                 x-text="showAnswer ? 'SEMBUNYIKAN JAWABAN' : 'TAMPILKAN JAWABAN'"
             ></button>
         </footer>
+
+        <!-- QR Code Modal -->
+        <div x-show="showQR" class="fixed inset-0 z-50 flex items-center justify-center bg-ink/80 backdrop-blur-sm" x-transition x-cloak>
+            <div class="w-full max-w-sm rounded-[2.5rem] bg-white p-8 text-center shadow-2xl relative" @click.away="showQR = false">
+                <button @click="showQR = false" class="absolute right-6 top-6 text-ink/40 hover:text-clay transition">
+                    <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+                <h2 class="text-3xl font-black text-ink mb-2">Join Quiz</h2>
+                <p class="text-sm font-bold text-ink/50 mb-6">Scan QR di bawah atau gunakan kode:</p>
+                
+                <div class="mb-6 inline-block rounded-3xl bg-ink/5 p-4 border border-ink/5">
+                    <img src="https://api.qrserver.com/v1/create-qr-code/?size=300x300&data={{ urlencode(route('quiz.show', $quiz->quiz_code)) }}" alt="QR Code" class="w-48 h-48 rounded-2xl mix-blend-multiply">
+                </div>
+                
+                <div class="text-4xl font-black tracking-[0.2em] text-fern mb-8">{{ $quiz->quiz_code }}</div>
+                
+                <button onclick="downloadQR()" class="w-full rounded-2xl bg-ink py-4 text-sm font-black text-white hover:bg-fern shadow-lg hover:shadow-fern/20 transition-all hover:-translate-y-0.5">
+                    Download QR Code
+                </button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -165,6 +191,38 @@
             if (duration <= 0) clearInterval(countdown);
             duration--;
         }, 1000);
+
+        function downloadQR() {
+            const url = 'https://api.qrserver.com/v1/create-qr-code/?size=800x800&data={{ urlencode(route("quiz.show", $quiz->quiz_code)) }}';
+            
+            Swal.fire({
+                title: 'Mengunduh...',
+                text: 'Mempersiapkan QR Code Anda',
+                allowOutsideClick: false,
+                didOpen: () => Swal.showLoading()
+            });
+
+            fetch(url)
+                .then(response => response.blob())
+                .then(blob => {
+                    const blobUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = blobUrl;
+                    a.download = 'QR-{{ $quiz->quiz_code }}.png';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(blobUrl);
+                    Swal.close();
+                })
+                .catch(() => {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Gagal',
+                        text: 'Terjadi kesalahan saat mengunduh QR Code'
+                    });
+                });
+        }
     </script>
 </body>
 </html>

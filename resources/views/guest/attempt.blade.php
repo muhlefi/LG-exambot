@@ -41,10 +41,10 @@
         return this.textAnswers[this.currentQuestion.id] || '';
     },
     isEssay() {
-        return this.currentQuestion && this.currentQuestion.question_type === 'essay';
+        return this.currentQuestion && ['Essay', 'Studi Kasus'].includes(this.currentQuestion.question_type);
     },
     isFillBlank() {
-        return this.currentQuestion && this.currentQuestion.question_type === 'fill_blank';
+        return this.currentQuestion && this.currentQuestion.question_type === 'Isian Singkat';
     },
     answeredCount() {
         return Object.keys(this.answers).length + Object.keys(this.textAnswers).length;

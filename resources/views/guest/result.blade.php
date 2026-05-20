@@ -88,7 +88,7 @@
                     @foreach($quiz->examSession->questions as $index => $question)
                         @php
                             $answer = $participant->answers->where('question_id', $question->id)->first();
-                            $isEssay = in_array($question->question_type, ['essay', 'fill_blank']);
+                            $isEssay = in_array($question->question_type, ['Essay', 'Studi Kasus', 'Isian Singkat']);
                             $status = !$answer || $answer->selected_answer === null ? 'empty' : ($isEssay ? 'pending' : ($answer->is_correct ? 'correct' : 'wrong'));
                         @endphp
                         <div class="flex items-center gap-3 p-3 rounded-xl @if($status === 'correct') bg-fern/5 @elseif($status === 'wrong') bg-clay/5 @elseif($status === 'pending') bg-honey/5 @else bg-ink/5 @endif">
@@ -121,7 +121,7 @@
                     @foreach($quiz->examSession->questions as $index => $question)
                         @php
                             $answer = $participant->answers->where('question_id', $question->id)->first();
-                            $isEssay = in_array($question->question_type, ['essay', 'fill_blank']);
+                            $isEssay = in_array($question->question_type, ['Essay', 'Studi Kasus', 'Isian Singkat']);
                             $status = !$answer || $answer->selected_answer === null ? 'empty' : ($isEssay ? 'pending' : ($answer->is_correct ? 'correct' : 'wrong'));
                         @endphp
                         <div class="rounded-xl border border-ink/10 bg-white p-4">

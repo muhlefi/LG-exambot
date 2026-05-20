@@ -46,10 +46,15 @@
                         <div class="flex items-center gap-2">
                             @if($quiz->status === 'active')
                                 <div class="flex items-center gap-2">
-                                    <img src="{{ $qrCodeUrl }}" alt="QR" class="h-12 w-12 rounded-lg border border-ink/10">
+                                    <div class="relative group/qr cursor-pointer" onclick="downloadQR('{{ App\Http\Controllers\Controller::generateQrCode($quizUrl, 800) }}', '{{ $quiz->quiz_code }}')">
+                                        <img src="{{ $qrCodeUrl }}" alt="QR" class="h-12 w-12 rounded-lg border border-ink/10 transition-opacity group-hover/qr:opacity-50">
+                                        <div class="absolute inset-0 flex items-center justify-center opacity-0 group-hover/qr:opacity-100 transition-opacity">
+                                            <svg class="w-5 h-5 text-ink" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                                        </div>
+                                    </div>
                                     <div>
                                         <a href="{{ $quizUrl }}" target="_blank" class="block text-xs font-black text-fern hover:underline truncate max-w-[200px]">{{ $quizUrl }}</a>
-                                        <span class="text-[10px] text-ink/40">Scan QR atau buka link</span>
+                                        <span class="text-[10px] text-ink/40">Scan QR atau klik untuk unduh</span>
                                     </div>
                                 </div>
                             @elseif($quiz->status === 'inactive')
@@ -83,4 +88,36 @@
     </div>
 
     <div class="mt-5">{{ $quizzes->links() }}</div>
+
+    <script>
+        function downloadQR(url, code) {
+            Swal.fire({
+                title: 'Mengunduh...',
+                text: 'Mempersiapkan QR Code Anda',
+                allowOutsideClick: false,
+                didOpen: () => Swal.showLoading()
+            });
+
+            fetch(url)
+                .then(response => response.blob())
+                .then(blob => {
+                    const blobUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = blobUrl;
+                    a.download = 'QR-' + code + '.png';
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(blobUrl);
+                    Swal.close();
+                })
+                .catch(() => {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Gagal',
+                        text: 'Terjadi kesalahan saat mengunduh QR Code'
+                    });
+                });
+        }
+    </script>
 </x-layouts.app>
