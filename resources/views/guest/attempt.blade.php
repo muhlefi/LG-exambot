@@ -190,7 +190,7 @@
                     <textarea 
                         x-model="textAnswers[currentQuestion.id]"
                         @input="setTextAnswer($event.target.value)"
-                        placeholder="{{ isEssay() ? 'Tulis jawaban esaimu di sini...' : 'Isi jawaban di sini...' }}"
+                        :placeholder="isEssay() ? 'Tulis jawaban esaimu di sini...' : 'Isi jawaban di sini...'"
                         class="w-full min-h-[150px] rounded-2xl border-2 border-ink/10 bg-white p-4 text-sm font-bold text-ink outline-none focus:border-fern focus:bg-fern/5 transition-all resize-none"
                     ></textarea>
                     <p class="mt-2 text-xs font-bold text-ink/40">Jawaban akan dinilai oleh guru.</p>
