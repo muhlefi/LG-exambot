@@ -653,7 +653,7 @@ Aturan Format Konten (WAJIB DIPATUHI):
   1. JANGAN sertakan pilihan jawaban atau instruksi seperti "(Benar/Salah)" atau "(A/B/C/D)" di dalam `question_text`.
   2. JANGAN membuat soal yang sama atau sangat mirip dalam satu paket.
   3. Pastikan kunci jawaban sinkron dengan opsi yang diberikan.
-  4. KHUSUS untuk soal tipe "Pilihan Ganda Kompleks", `answer_key` WAJIB berisi 2 atau 3 opsi yang benar, dipisahkan dengan koma (contoh: "A, C" atau "A, B, D"). Untuk tipe soal lain, `answer_key` berisi 1 opsi benar saja (contoh: "A").
+  4. KHUSUS untuk soal tipe "Pilihan Ganda Kompleks", `answer_key` WAJIB berisi 2 atau 3 opsi yang benar, dipisahkan dengan koma (contoh acak: "A, C" atau "B, D" atau "A, C, D"). Variasikan kuncinya secara acak, jangan hanya A dan B terus-menerus. Untuk tipe soal lain, `answer_key` berisi 1 opsi benar saja (contoh: "A").
   5. KHUSUS untuk soal tipe "Menjodohkan", sajikan daftar pasangan (premis dan respon) di dalam `question_text`, dan jadikan kombinasi pasangannya sebagai opsi jawaban (contoh Opsi A: "1-X, 2-Y, 3-Z"). Kunci jawaban tetap 1 opsi benar.
 
 Kembalikan objek JSON:
@@ -813,14 +813,12 @@ PROMPT;
             return $sequence % 2 === 0 ? 'Benar' : 'Salah';
         }
         if ($structure->question_type === 'Pilihan Ganda Kompleks') {
-            $labels = range('A', 'Z');
-            $optCount = max(2, $structure->option_count);
-            $correctKeys = [$labels[0], $labels[1]];
-            if ($optCount > 3 && $sequence % 2 === 0) {
-                $correctKeys = [$labels[1], $labels[2], $labels[3]];
-            }
+            $labels = array_slice(range('A', 'Z'), 0, max(2, $structure->option_count));
+            $numOfAnswers = min(rand(2, 3), count($labels));
+            $randomKeys = (array) array_rand(array_flip($labels), $numOfAnswers);
+            sort($randomKeys);
 
-            return implode(', ', $correctKeys);
+            return implode(', ', $randomKeys);
         }
         $labels = range('A', 'Z');
 
