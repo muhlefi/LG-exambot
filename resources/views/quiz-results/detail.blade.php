@@ -58,7 +58,17 @@
 
     <!-- Leaderboard -->
     <div class="paper-panel rounded-[2rem] p-6 mb-6">
-        <h2 class="ink-heading text-2xl font-black mb-4">Peringkat Peserta</h2>
+        <div class="mb-4 flex items-center justify-between">
+            <h2 class="ink-heading text-2xl font-black">Peringkat Peserta</h2>
+            @if($quiz->participants->count() > 0)
+                <form id="clearParticipantsForm" action="{{ route('quizzes.participants.clear', $quiz) }}" method="POST">
+                    @csrf @method('DELETE')
+                    <button type="button" onclick="confirmDelete('clearParticipantsForm', 'Semua data peserta dan jawabannya akan dihapus permanen!')" class="rounded-xl bg-clay/10 px-4 py-2 text-xs font-black text-clay transition hover:bg-clay hover:text-white">
+                        Bersihkan Semua
+                    </button>
+                </form>
+            @endif
+        </div>
         <div class="overflow-x-auto">
             <table class="w-full min-w-[500px] text-left text-sm">
                 <thead>

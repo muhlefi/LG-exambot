@@ -48,7 +48,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/sessions/{examSession}/structures', [ExamSessionController::class, 'addStructure'])->name('sessions.structures.store');
     Route::post('/sessions/{examSession}/structures/{structure}/duplicate', [ExamSessionController::class, 'duplicateStructure'])->name('sessions.structures.duplicate');
     Route::delete('/sessions/{examSession}/structures/{structure}', [ExamSessionController::class, 'destroyStructure'])->name('sessions.structures.destroy');
-    
+
     // AI Generation & Results
     Route::post('/sessions/{examSession}/generate', [ExamSessionController::class, 'generate'])->name('sessions.generate');
     Route::post('/sessions/{examSession}/generate-step/{structure}', [ExamSessionController::class, 'generateStep'])->name('sessions.generate.step');

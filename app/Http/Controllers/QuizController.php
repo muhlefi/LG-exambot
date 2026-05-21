@@ -113,4 +113,13 @@ class QuizController extends Controller
 
         return view('quiz-results.detail', compact('quiz'));
     }
+
+    public function clearParticipants(Quiz $quiz)
+    {
+        abort_unless($quiz->examSession->user_id === Auth::id() || Auth::user()?->role === 'admin', 403);
+
+        $quiz->participants()->delete();
+
+        return back()->with('status', 'Semua data peserta berhasil dibersihkan.');
+    }
 }
