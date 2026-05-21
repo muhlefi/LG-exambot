@@ -29,9 +29,30 @@
     prev() { if(this.currentIndex > 0) { this.currentIndex--; this.scrollTop() } },
     scrollTop() { window.scrollTo({ top: 0, behavior: 'smooth' }) },
     selectAnswer(optionLabel) {
-        this.answers[this.currentQuestion.id] = optionLabel;
+        if (this.currentQuestion.question_type === 'Pilihan Ganda Kompleks') {
+            let current = this.answers[this.currentQuestion.id] || '';
+            let arr = current ? current.split(',').map(s => s.trim()) : [];
+            if (arr.includes(optionLabel)) {
+                arr = arr.filter(l => l !== optionLabel);
+            } else {
+                arr.push(optionLabel);
+            }
+            arr.sort();
+            if (arr.length === 0) {
+                delete this.answers[this.currentQuestion.id];
+            } else {
+                this.answers[this.currentQuestion.id] = arr.join(',');
+            }
+        } else {
+            this.answers[this.currentQuestion.id] = optionLabel;
+        }
     },
     isSelected(optionLabel) {
+        if (this.currentQuestion.question_type === 'Pilihan Ganda Kompleks') {
+            let current = this.answers[this.currentQuestion.id];
+            if (!current) return false;
+            return current.split(',').map(s => s.trim()).includes(optionLabel);
+        }
         return this.answers[this.currentQuestion.id] === optionLabel;
     },
     setTextAnswer(value) {

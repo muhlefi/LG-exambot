@@ -162,10 +162,14 @@ class QuizGuestController extends Controller
         foreach ($quiz->examSession->questions as $question) {
             $selectedAnswer = $answers[$question->id] ?? null;
 
-            if (in_array($question->question_type, ['essay', 'fill_blank'])) {
+            if (in_array($question->question_type, ['Essay', 'Studi Kasus', 'Isian Singkat'])) {
                 $isCorrect = null;
+            } elseif ($question->question_type === 'Pilihan Ganda Kompleks') {
+                $selectedNormalized = collect(explode(',', $selectedAnswer ?? ''))->map(fn($v) => trim($v))->filter()->sort()->implode(',');
+                $correctNormalized = collect(explode(',', $question->answer_key ?? ''))->map(fn($v) => trim($v))->filter()->sort()->implode(',');
+                $isCorrect = $selectedNormalized !== '' && $selectedNormalized === $correctNormalized;
             } else {
-                $isCorrect = $selectedAnswer !== null && $selectedAnswer === $question->answer_key;
+                $isCorrect = $selectedAnswer !== null && trim($selectedAnswer) === trim($question->answer_key);
             }
 
             if ($isCorrect === true) {
@@ -184,7 +188,7 @@ class QuizGuestController extends Controller
             );
         }
 
-        $scoredQuestions = $quiz->examSession->questions->whereNotIn('question_type', ['essay', 'fill_blank'])->count();
+        $scoredQuestions = $quiz->examSession->questions->whereNotIn('question_type', ['Essay', 'Studi Kasus', 'Isian Singkat'])->count();
         $score = $scoredQuestions > 0 ? round(($correctCount / $scoredQuestions) * 100, 1) : 0;
 
         $participant->update([

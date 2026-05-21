@@ -654,6 +654,7 @@ Aturan Format Konten (WAJIB DIPATUHI):
   2. JANGAN membuat soal yang sama atau sangat mirip dalam satu paket.
   3. Pastikan kunci jawaban sinkron dengan opsi yang diberikan.
   4. KHUSUS untuk soal tipe "Pilihan Ganda Kompleks", `answer_key` WAJIB berisi 2 atau 3 opsi yang benar, dipisahkan dengan koma (contoh: "A, C" atau "A, B, D"). Untuk tipe soal lain, `answer_key` berisi 1 opsi benar saja (contoh: "A").
+  5. KHUSUS untuk soal tipe "Menjodohkan", sajikan daftar pasangan (premis dan respon) di dalam `question_text`, dan jadikan kombinasi pasangannya sebagai opsi jawaban (contoh Opsi A: "1-X, 2-Y, 3-Z"). Kunci jawaban tetap 1 opsi benar.
 
 Kembalikan objek JSON:
 {
